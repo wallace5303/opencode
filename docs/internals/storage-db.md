@@ -1,0 +1,124 @@
+---
+title: 存储与 #db 条件导入
+sidebar_position: 7
+---
+
+# 存储与 `#db` 条件导入
+
+opencode 的持久化分两层：业务文件存储（`Storage` 服务）与数据库适配（`#db` 条件导入 + Drizzle）。文件在 `packages/opencode/src/storage/`。
+
+## `#db` 条件导入
+
+`packages/opencode/package.json` 的 `imports` 字段：
+
+```jsonc
+{
+  "imports": {
+    "#db": {
+      "bun": "./src/storage/db.bun.ts",
+      "node": "./src/storage/db.node.ts",
+      "default": "./src/storage/db.bun.ts"
+    }
+  }
+}
+```
+
+代码里写 `import { ... } from "#db"`，运行时按条件解析：
+
+- **Bun** → `db.bun.ts`（用 `@effect/sql-sqlite-bun`）
+- **Node** → `db.node.ts`（用 Node 适配的 SQLite 驱动）
+
+上层业务代码不关心跑在哪个运行时，`#db` 替你切换。这是 Node `imports` 条件导出机制（package.json `imports` + `#` 前缀的内部别名）。
+
+> `src/storage/` 下可见 `storage.ts` 和 `schema.ts`；`db.bun.ts`/`db.node.ts` 由 `#db` 条件解析，提供具体驱动适配。
+
+## Storage 服务
+
+`Storage` 服务（`storage/storage.ts:53`，`@opencode/Storage`）：
+
+| 方法 | 用途 |
+|---|---|
+| `read` / `write` / `update` | 文件读写 |
+| `list` | 列目录 |
+| `remove` | 删除 |
+| `migrate` | 数据迁移 |
+
+- `migration.1`（`:82`）初始化目录结构
+- `migration.2`（`:182`）数据迁移
+- `node` LayerNode（`:325`）依赖 `FSUtil.node` + `Git.node`
+
+Storage 是 **JSON 文件存储**（非 SQLite），migration 基于 FSUtil + Git。
+
+## Drizzle Schema
+
+`storage/schema.ts` re-export 所有表定义，来自 `@opencode-ai/core/*/sql`：
+
+| 表 | 用途 |
+|---|---|
+| `SessionTable` | 会话元数据（id/project_id/agent/model/cost/tokens/...） |
+| `MessageTable` / `PartTable` | 消息与消息部分 |
+| `SessionInputTable` | Admitted Prompt（admitted_seq/prompt/delivery/promoted_seq） |
+| `SessionContextEpochTable` | Context Epoch（baseline/snapshot/baseline_seq） |
+| `TodoTable` | 待办 |
+| `ProjectTable` / `WorkspaceTable` | 项目与工作区 |
+| `AccountTable` / `AccountStateTable` / `ControlAccountTable` | 账户 |
+
+### 字段命名约定：snake_case
+
+Drizzle 字段用 snake_case，**这样列名不必再用字符串重定义**：
+
+```ts
+// Good
+const table = sqliteTable("session", {
+  id: text().primaryKey(),
+  project_id: text().notNull(),
+  created_at: integer().notNull(),
+})
+
+// Bad
+const table = sqliteTable("session", {
+  id: text("id").primaryKey(),
+  projectID: text("project_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+})
+```
+
+## SessionStore：会话持久化
+
+`SessionStore`（`packages/core/src/session/store.ts:1-63`）是 **global 级**（`makeGlobalNode`），数据库对所有 Location 可见：
+
+| 方法 | 行 | 行为 |
+|---|---|---|
+| `get(sessionID)` | `:35-37` | 读 `SessionTable` → `SessionSchema.Info` |
+| `context(sessionID)` | `:39-41` | `SessionHistory.load` 全量 projected messages |
+| `runnerContext(sessionID, baselineSeq)` | `:42-44` | `SessionHistory.loadForRunner`（带 baseline 截止） |
+| `message(messageID)` | `:45-57` | 读单条 `SessionMessageTable` |
+
+> SessionStore 是 global 级，SessionRunner 是 Location 级——见 [tool-registry-permissions](./tool-registry-permissions.md#location-作用域)。
+
+## 数据目录
+
+业务数据存放在 `Global.Path.data`（opencode 的数据目录）：
+
+- `Global.Path.data/worktree/<projectID>/<name>` —— worktree
+- `Global.Path.data/tool-output` —— Managed Tool Output File（`TRUNCATION_DIR`）
+- session 数据库 / 文件
+
+`Storage` 服务负责这些目录的初始化与迁移。
+
+## 事件持久化
+
+会话运行时通过事件持久化（`SessionEvent.*`）：
+
+- `PromptAdmitted` —— admit 时
+- `Prompted` —— promote 时
+- `ContextUpdated` —— System Context 变更时
+- LLM 流式 event —— `createLLMEventPublisher` 实时落库
+
+事件序列号 `EventV2.latestSequence` 用作 promote 的 `cutoff`（safe boundary）。投影器（`server/projectors.ts`）把事件投影成 `SessionMessageTable` 等可读行。
+
+## 相关文档
+
+- SessionStore 在 drain 中的使用：[session-lifecycle](./session-lifecycle.md#阶段-3drain排空)
+- 配置系统：[config](../features/config.md)
+- 工程基建速查：[tooling](../tooling.md#存储与-db)

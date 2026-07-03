@@ -1,0 +1,98 @@
+---
+title: Embedded OpenCode
+sidebar_position: 8
+---
+
+# Embedded OpenCode（同进程嵌入）
+
+opencode 不只能作为独立 server 进程跑。通过 `sdk-next`，可以把它当**库**嵌进任意 TS 应用，同进程运行，不走真实网络。
+
+> 术语（`CONTEXT.md`）：**OpenCode Client** 是从 HttpApi 生成的 Promise/Effect API；**Embedded OpenCode** 是结构上扩展 OpenCode Client 的同进程宿主，提供 in-memory HTTP 传输 + 额外同进程能力。
+
+## 为什么要"嵌入式"
+
+独立 server 模式（`opencode serve`）适合多客户端共享一个 opencode 实例。但有些场景需要把 opencode 嵌进自己的应用：
+
+- 把 agent 能力嵌进一个 TS 后端，不想多起一个进程
+- 测试里同进程跑 opencode，避免端口/网络抖动
+- IDE 插件、CLI 工具内嵌 agent
+
+起一个独立 server 再用 HTTP 自连是反模式——多一跳网络、多一份状态、部署更复杂。Embedded 直接 in-memory。
+
+## 原理：in-memory HttpClient
+
+`sdk-next` 组合 `client` + `core` + `server` 三者。关键在于：
+
+```
+普通远程模式:
+  UI/SDK ──HTTP──▶ opencode server ──▶ handler
+
+Embedded 模式:
+  应用 ──▶ sdk-next
+            │
+            ├─ OpenCode Client（生成的 Effect API）
+            │     │
+            │     ▼ in-memory HttpClient（不经过网络）
+            │     ▼
+            └─ 同一套 router + handler（server 实现）
+```
+
+`OpenCode Client` 用一个 **in-memory `HttpClient`** 直接打同一套路由与 handler。handler 不知道请求来自网络还是内存——它们接收的是同一个 HttpApi 契约的请求。
+
+这样：
+
+- 契约唯一性不变（还是那份 HttpApi）
+- handler 不用为嵌入式写特殊路径
+- 客户端 API 不变（生成的 Effect API）
+
+## 与 ACP 的区别
+
+| | Embedded OpenCode | ACP |
+|---|---|---|
+| 进程 | 同进程（TS 库） | 跨进程（stdin/stdout NDJSON 流） |
+| 协议 | HttpApi（in-memory） | Agent Client Protocol |
+| 语言 | TS 应用 | 任意语言的 agent 客户端 |
+| 入口 | `sdk-next` | `opencode acp`（`cli/cmd/acp.ts:9`） |
+
+ACP 适合非 TS 的外部 agent 客户端接入；Embedded 适合 TS 应用同进程嵌入。
+
+## SDK Contract IR
+
+为什么 client 能既走真实 HTTP 又走 in-memory？因为生成时产出的是 **SDK Contract IR**——运行时中性的中间表示，保留编/解码类型投影 + 传输元数据。运行时解释器可选：
+
+- 真实 HTTP `HttpClient`（远程）
+- in-memory `HttpClient`（Embedded）
+
+不同 SDK emitter 可自选公开值模型与运行时解释器，而不必重新解析契约。详见 [httpapi-codegen](./httpapi-codegen.md)。
+
+## 分层边界
+
+`sdk-next` 是**唯一**允许同时依赖 `client` + `core` + `server` 的包：
+
+```jsonc
+{
+  "dependencies": {
+    "@opencode-ai/client": "workspace:*",
+    "@opencode-ai/core": "workspace:*",
+    "@opencode-ai/server": "workspace:*"
+  }
+}
+```
+
+普通 `client` 包不能这么做（运行时只依赖 schema/protocol）。`sdk-next` 显式组合三者，才能在同进程里把 server 的 handler 接到 client 的 in-memory 传输上。
+
+详见 [dependency-layering](./dependency-layering.md)。
+
+## 不变量
+
+1. Embedded 走**同一套** HttpApi 契约与 handler，没有特权路径
+2. handler 不感知请求来自网络还是内存
+3. 客户端 API 与远程模式一致（生成的 Effect API）
+4. 同进程能力是"额外"的——结构上扩展 OpenCode Client，不替换它
+
+## 相关文档
+
+- 生成链路与 SDK Contract IR：[httpapi-codegen](./httpapi-codegen.md)
+- 分层为什么允许 sdk-next 组合三者：[dependency-layering](./dependency-layering.md)
+- 多端与 SDK 全景：[clients-and-ui](../clients-and-ui.md)
+- ACP 对照：[sessions](../features/sessions.md#acpagent-client-protocol)
