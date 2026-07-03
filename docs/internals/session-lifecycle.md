@@ -49,29 +49,38 @@ SessionRunner.run（双层循环）          runner/llm.ts:378
 
 ## 时序图（参与者视角）
 
-```
-用户       SessionV2    Coordinator     Runner        LLM        Store(DB)
- │             │             │            │            │             │
- │──prompt────▶│             │            │            │             │
- │             │──admit─────────────────────────────────────────────▶│ 写 SessionInputTable
- │             │             │            │            │             │ + 发 PromptAdmitted
- │             │──wake──────▶│            │            │             │
- │             │             │ 合并/新建 entry          │             │
- │             │             │──run──────▶│            │             │ (provide Location Layer)
- │             │             │            │──get─────────────────────▶│ reload session
- │             │             │            │──promote(cutoff=latestSeq)│ safe boundary
- │             │             │            │──reconcile(context)       │ → Mid-Convo System Msg
- │             │             │            │──load history─────────────▶│ 带 baselineSeq
- │             │             │            │──stream───▶│              │ ★ 每 turn 一次
- │             │             │            │            │──event──────▶│ 流式实时落库
- │             │             │            │◀──chunk────│              │
- │             │             │            │──settle tools─────────────▶│ toolResult 持久化
- │             │             │            │──needsCont?                │
- │             │             │◀──done─────│            │              │
- │             │             │ settle: pendingWake?                    │
- │             │             │   true → 原地重启 entry                 │
- │             │             │   false → 删 key                        │
- │◀────────────│             │            │            │              │
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant V2 as SessionV2
+    participant C as Coordinator
+    participant R as Runner
+    participant LLM as LLM
+    participant DB as Store(DB)
+
+    U->>V2: prompt(input)
+    V2->>DB: admit() 写 SessionInputTable<br/>+ 发 PromptAdmitted
+    V2->>C: wake(sessionID)
+    Note over C: 合并/新建 entry
+    C->>R: run({sessionID, force})<br/>(provide Location Layer)
+    R->>DB: get(sessionID) reload
+    rect rgb(220,252,231)
+    Note over R,DB: safe boundary（provider 调用前）
+    R->>DB: promote(steer/queue, cutoff=latestSeq)
+    R->>R: reconcile(context)<br/>→ Mid-Convo System Msg
+    R->>DB: load history (带 baselineSeq)
+    end
+    rect rgb(254,243,199)
+    R->>LLM: stream(request) ★ 每 turn 一次
+    LLM-->>DB: event 实时落库
+    LLM-->>R: chunk
+    end
+    R->>DB: settle tools → toolResult 持久化
+    R->>R: needsContinuation?
+    R-->>C: done
+    Note over C: settle: pendingWake?<br/>true→原地重启 entry<br/>false→删 key
+    V2-->>U: (drain 结束，进程本地)
 ```
 
 ## 阶段 1：Admit（接纳）

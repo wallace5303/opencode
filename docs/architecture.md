@@ -15,6 +15,42 @@ sidebar_position: 2
 
 这条规则在 `AGENTS.md` 里是显式约束，目的是让 **客户端可以被独立生成、独立分发**，不把服务器实现拖进来。
 
+## 依赖方向图
+
+```mermaid
+graph LR
+    schema --> protocol
+    schema --> llm
+    schema --> core
+    llm --> core
+    protocol --> server
+    core --> server
+    protocol --> client
+    schema --> client
+    client --> sdknext[sdk-next]
+    core --> sdknext
+    server --> sdknext
+    server --> opencode
+    core --> opencode
+    core --> app[app / desktop / tui / web]
+
+    classDef contract fill:#16a34a,stroke:#15803d,color:#ffffff
+    classDef kernel fill:#7c3aed,stroke:#6d28d9,color:#ffffff
+    classDef service fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef clientN fill:#ea580c,stroke:#c2410c,color:#ffffff
+    classDef compose fill:#db2777,stroke:#be185d,color:#ffffff
+    classDef appN fill:#374151,stroke:#1f2937,color:#ffffff
+
+    class schema,protocol contract
+    class llm,core kernel
+    class server service
+    class client clientN
+    class sdknext,opencode compose
+    class app appN
+```
+
+> 色阶：🟩 契约层 · 🟪 内核层 · 🟦 服务层 · 🟧 客户端层 · 🩷 组合层 · ⬛ 应用层。关键边：`client` 只从 `schema`/`protocol` 入边（运行时），`sdk-next` 是唯一同时连 `client`+`core`+`server` 的组合点。
+
 ## 分层视图
 
 ```
@@ -108,6 +144,31 @@ packages/protocol/src/api.ts        makeDefaultApi()  契约定义
 
         生成方向（dev 时）：
         protocol + server ──httpapi-codegen──▶ packages/client/src/generated*
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as protocol/api.ts
+    participant SV as server/api.ts
+    participant OP as opencode httpapi
+    participant CG as httpapi-codegen
+    participant CL as client/generated*
+    participant UI as UI / SDK / 多端
+
+    P->>SV: makeDefaultApi() 契约
+    SV->>SV: 注入 Location 中间件
+    OP->>OP: 实例级 HttpApi 组装<br/>Root + Instance, 21 groups
+    rect rgb(220,252,231)
+    Note over P,SV: dev 时（不进运行时）
+    P-->>CG: 读契约 IR
+    SV-->>CG: 读实现
+    CG->>CL: 生成 Promise + Effect 客户端
+    end
+    rect rgb(254,243,199)
+    Note over CL: 改契约后必须 bun run generate<br/>CI check:generated 校验
+    CL->>UI: 多端使用
+    end
 ```
 
 改了 Protocol 或 Server 的 HttpApi 之后，**必须**在 `packages/client` 跑 `bun run generate`，否则 `check:generated` CI 会挂。`src/generated` 与 `src/generated-effect` **不要手改**。

@@ -154,28 +154,43 @@ output(result):                                   :86-150
 
 ## 时序图（一次工具调用的参与者视角）
 
-```
-Model        Runner        Registry       Permission       Tool        Truncate       Store
- │             │              │               │              │             │             │
- │──tool_call─▶│              │               │              │             │             │
- │             │──settle──────▶│              │               │             │             │
- │             │              │──named(id)───▶│(Tool.Def)    │             │             │
- │             │◀──Def────────│               │              │             │             │
- │             │──execute(args, ctx)────────────────────────▶│             │             │
- │             │              │               │              │──decode args│             │
- │             │              │               │              │──ask────────▶│             │
- │             │              │               │              │   evaluate(wildcard match)
- │             │              │               │              │◀──allow/deny/ask           │
- │             │              │               │              │   ask → 挂起等 reply        │
- │             │              │               │              │──execute(真正执行)         │
- │             │              │               │              │   (Location 作用域内)      │
- │             │              │               │              │──output───────────────────▶│
- │             │              │               │              │             │ 超限?       │
- │             │              │               │              │             │  是→写 Managed File
- │             │              │               │              │◀──content+outputPath       │
- │             │◀──toolResult────────────────────────────────│             │             │
- │             │──publish(toolResult)───────────────────────────────────────────────────▶│ Model Tool Output
- │◀(下个 turn) │              │               │              │             │             │
+```mermaid
+sequenceDiagram
+    autonumber
+    actor M as Model
+    participant R as Runner
+    participant Reg as Registry
+    participant P as Permission
+    participant T as Tool
+    participant Tr as Truncate
+    participant DB as Store
+
+    M->>R: tool_call
+    R->>Reg: settle
+    Reg->>Reg: named(id) → Tool.Def
+    Reg-->>R: Def
+    R->>T: execute(args, ctx)
+    T->>T: decode args
+    rect rgb(254,243,199)
+    Note over T,P: 前置拦截：deny 则抛错
+    T->>P: ask(permission, pattern)
+    Note over P: evaluate(wildcard match)<br/>allow / deny / ask
+    P-->>T: 结果
+    Note over T: ask → 挂起等 reply
+    end
+    rect rgb(220,252,231)
+    Note over T: Location 作用域内执行
+    T->>T: execute 真正执行<br/>(InstanceContext.containsPath 约束)
+    end
+    rect rgb(254,243,199)
+    Note over T,Tr: 后置拦截：超限写 Managed File
+    T->>Tr: output(result)
+    Note over Tr: 超限? 是→写 Managed File
+    Tr-->>T: content + outputPath
+    end
+    T-->>R: toolResult
+    R->>DB: publish(toolResult)<br/>Model Tool Output
+    Note over M: 下个 turn 模型看到工具结果
 ```
 
 ## 相关文档

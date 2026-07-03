@@ -68,6 +68,89 @@ sidebar_position: 3
 - 在 Safe Provider-Turn Boundary，新提升的 user input 或已结算的工具结果**先于**合并的 Mid-Conversation System Message。
 - Admitted Prompt 是**可重放**的 pending input，尚未成为模型可见的 Session History。
 
+## 术语交叉引用图
+
+按域分组，箭头表示概念间的派生/组成/时序关系。颜色同全站约定：🟩 System Context 域 · 🟪 Session History 域 · 🟦 执行与交付域 · 🟧 工具与输出域 · 🩷 客户端与 SDK 域。
+
+```mermaid
+graph LR
+    subgraph SC[System Context 域]
+        CS[Context Source]
+        REG[System Context Registry]
+        SYS[System Context]
+        BASE[Baseline System Context]
+        EPOCH[Context Epoch]
+        SNAP[Context Snapshot]
+        MCS[Mid-Conversation System Message]
+        UNAV[Unavailable Context]
+    end
+    subgraph SESS[Session History 域]
+        ADM[Admitted Prompt]
+        PROM[Prompt Promotion]
+        HIST[Session History]
+    end
+    subgraph EXEC[执行与交付域]
+        BND[Safe Provider-Turn Boundary]
+        PT[Provider Turn]
+        DRAIN[Session Drain]
+        ALW[Provider-Turn Allowance]
+        ST[steer]
+        QU[queue]
+    end
+    subgraph TOOL[工具与输出域]
+        MTO[Model Tool Output]
+        MGMT[Managed Tool Output File]
+    end
+    subgraph CLI[客户端与 SDK 域]
+        HTTP[HttpApi 契约]
+        OC[OpenCode Client]
+        EOC[Embedded OpenCode]
+        IR[SDK Contract IR]
+        PAGE[Page]
+    end
+
+    REG --注册--> CS
+    CS --组合--> SYS
+    SYS --首次渲染--> BASE
+    BASE --属于--> EPOCH
+    EPOCH --对比用--> SNAP
+    CS --变更合并--> MCS
+    CS --暂不可用--> UNAV
+
+    ST --> ADM
+    QU --> ADM
+    ADM --提升--> PROM
+    PROM --追加 user msg--> HIST
+    MCS --持久化进--> HIST
+    PROM --重置--> ALW
+
+    BND --接纳--> PROM
+    BND --接纳--> MCS
+    PT --发生在--> DRAIN
+    DRAIN --进程本地--> PT
+
+    MTO --超限落盘--> MGMT
+
+    HTTP --生成--> OC
+    HTTP --编译--> IR
+    EOC --扩展--> OC
+    OC --分页封装--> PAGE
+
+    classDef sc fill:#16a34a,stroke:#15803d,color:#ffffff
+    classDef sess fill:#7c3aed,stroke:#6d28d9,color:#ffffff
+    classDef exec fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef tool fill:#ea580c,stroke:#c2410c,color:#ffffff
+    classDef cli fill:#db2777,stroke:#be185d,color:#ffffff
+
+    class CS,REG,SYS,BASE,EPOCH,SNAP,MCS,UNAV sc
+    class ADM,PROM,HIST sess
+    class BND,PT,DRAIN,ALW,ST,QU exec
+    class MTO,MGMT tool
+    class HTTP,OC,EOC,IR,PAGE cli
+```
+
+读图要点：steer/queue 都汇入 Admitted Prompt；Safe Provider-Turn Boundary 是**唯一**同时驱动 Prompt Promotion 与 Mid-Conversation System Message 接纳的时序点；Context Source 的变更不直接进 history，必须经 reconcile 合并成 MCS 才落库。
+
 ## 与代码的对应
 
 | 术语 | 主要代码位置 |

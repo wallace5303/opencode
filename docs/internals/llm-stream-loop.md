@@ -33,32 +33,44 @@ runTurnAttempt(sessionID, promotion, currentStep)
 
 ## 时序图（一次 turn 的参与者视角）
 
-```
-Runner        ContextEpoch    Catalog      History       LLM         Tool        Store
- │                │              │            │           │             │           │
- │──get session─────────────────────────────────────────────────────────────────────▶│
- │──prepare──────▶│              │            │           │             │           │
- │                │──reconcile───│(sources)   │           │             │           │
- │                │   vs snapshot│            │           │             │           │
- │                │──Updated?──────────────────────────────────────────────────────▶│ ContextUpdated
- │◀──baseline/snapshot│           │            │           │             │           │
- │──promote(steer/queue, cutoff)────────────────────────────────────────────────────▶│ 写 promoted_seq
- │──resolve──────│──────────────▶│            │           │             │           │
- │◀──Model───────│───────────────│            │           │             │           │
- │──entriesForRunner(baselineSeq)─────────────▶│           │             │           │
- │◀──projected history────────────────────────│           │             │           │
- │──isLastStep? 若是 → toolChoice=none + MAX_STEPS_PROMPT                              │
- │──request + stream──────────────────────────────────────▶│             │           │
- │                │              │            │           │──event──────────────────▶│ 实时持久化
- │◀──tool_call────│──────────────│────────────│───────────│             │           │
- │──settle────────│──────────────│────────────│───────────│────────────▶│           │
- │                │              │            │           │             │──Permission.ask
- │                │              │            │           │             │──execute
- │                │              │            │           │             │──Truncate.output
- │◀──toolResult───│──────────────│────────────│───────────│─────────────│──────────▶│ Model Tool Output
- │──compactIfNeeded─────────────────────────────────────────────────────────────────▶│
- │──awaitToolFibers─────────────────────────────────────────────────────────────────▶│
- │──return { needsContinuation, step }                                                │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Runner
+    participant CE as ContextEpoch
+    participant Cat as Catalog
+    participant H as History
+    participant LLM as LLM
+    participant T as Tool
+    participant DB as Store
+
+    R->>DB: get session
+    rect rgb(220,252,231)
+    Note over R,H: safe boundary（stream 之前）
+    R->>CE: prepare
+    CE->>CE: reconcile(sources) vs snapshot
+    CE-->>DB: Updated? → ContextUpdated
+    CE-->>R: baseline + snapshot
+    R->>DB: promote(steer/queue, cutoff)
+    R->>Cat: resolve(session)
+    Cat-->>R: Model
+    R->>H: entriesForRunner(baselineSeq)
+    H-->>R: projected history
+    Note over R: isLastStep? 若是 → toolChoice=none + MAX_STEPS_PROMPT
+    end
+    rect rgb(254,243,199)
+    R->>LLM: request + stream ★
+    LLM-->>DB: event 实时持久化
+    LLM-->>R: tool_call
+    end
+    R->>T: settle
+    T->>T: Permission.ask
+    T->>T: execute
+    T->>T: Truncate.output
+    T-->>DB: toolResult (Model Tool Output)
+    R->>DB: compactIfNeeded
+    R->>DB: awaitToolFibers
+    R-->>R: return { needsContinuation, step }
 ```
 
 ## 逐段解释

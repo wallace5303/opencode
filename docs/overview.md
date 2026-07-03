@@ -33,6 +33,48 @@ sidebar_position: 1
 
 仓库根有 30+ 个 `packages/*`，按职责分层（详细依赖关系见 [架构分层](./architecture.md)）：
 
+```mermaid
+graph TD
+    subgraph 多端
+      CLI[CLI / TUI]
+      WEB[Web]
+      DSK[Desktop]
+      SDK[SDK / sdk-next]
+    end
+    OP[opencode<br/>业务与入口]
+    subgraph 服务与内核
+      SV[server]
+      CORE[core<br/>Session V2 内核]
+      PROT[protocol<br/>HttpApi 契约]
+      SCH[schema]
+    end
+    APP[app 共享 UI 组件]
+
+    SDK --> OP
+    CLI --> OP
+    WEB --> APP
+    DSK --> APP
+    APP --> CORE
+    OP --> SV
+    OP --> CORE
+    SV --> CORE
+    SV --> PROT
+    CORE --> SCH
+    PROT --> SCH
+
+    classDef multi fill:#ea580c,stroke:#c2410c,color:#ffffff
+    classDef biz fill:#db2777,stroke:#be185d,color:#ffffff
+    classDef srv fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef ui fill:#374151,stroke:#1f2937,color:#ffffff
+    classDef contract fill:#16a34a,stroke:#15803d,color:#ffffff
+
+    class CLI,WEB,DSK,SDK multi
+    class OP biz
+    class SV,CORE srv
+    class PROT,SCH contract
+    class APP ui
+```
+
 **契约与基础（依赖图最底层）**
 
 - `schema` — 纯类型/契约定义，只依赖 `effect`

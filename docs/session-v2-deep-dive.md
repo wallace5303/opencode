@@ -13,34 +13,35 @@ sidebar_position: 6
 
 Session V2 的根本设计是**把"接纳用户输入"和"执行模型调用"拆成两步**，中间用持久化的事件队列连接。
 
+```mermaid
+graph TD
+    P["SessionV2.prompt(input)"]
+    ADM["(1) admit<br/>写 SessionInputTable + PromptAdmitted"]
+    WK["(2) execution.wake(sessionID)<br/>除非 resume:false"]
+    EXE["SessionExecution.local"]
+    COORD["coordinator.wake(sessionID)<br/>合并唤醒"]
+    RC["SessionRunCoordinator"]
+    DRAIN["drain 回调<br/>SessionRunner.run + provide(Location Layer)"]
+    RUN["SessionRunner.run<br/>runner/llm.ts"]
+    TURN["每次 provider turn:<br/>promote · reconcile · reload history<br/>一次 llm.stream · 结算工具 · needsContinuation?"]
+    END["drain 结束<br/>进程本地 · 无持久身份"]
+
+    P --> ADM --> WK --> EXE
+    EXE --> COORD --> RC --> DRAIN --> RUN --> TURN --> END
+    TURN -.续作.-> RUN
+
+    classDef entry fill:#16a34a,stroke:#15803d,color:#ffffff
+    classDef sched fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef run fill:#7c3aed,stroke:#6d28d9,color:#ffffff
+    classDef term fill:#374151,stroke:#1f2937,color:#ffffff
+
+    class P entry
+    class ADM,WK,EXE,COORD,RC,DRAIN sched
+    class RUN,TURN run
+    class END term
 ```
-SessionV2.prompt(input)
-  │
-  │ (1) admit: 写一行 SessionInputTable + 发布 PromptAdmitted 事件
-  │
-  │ (2) execution.wake(sessionID)   ← 除非 resume:false
-  ▼
-SessionExecution.local
-  │
-  │ coordinator.wake(sessionID)     ← 合并唤醒
-  ▼
-SessionRunCoordinator
-  │
-  │ drain 回调: SessionRunner.run({ sessionID, force })
-  │   provide(locations.get(session.location))   ← 注入 Location Layer
-  ▼
-SessionRunner.run  (runner/llm.ts)
-  │
-  │ 每次 provider turn:
-  │   - promote steers/queue（safe boundary）
-  │   - SystemContext.reconcile → 可能产出 Mid-Conversation System Message
-  │   - reload projected history
-  │   - 一次 llm.stream(request)
-  │   - 结算工具调用
-  │   - needsContinuation? 继续循环
-  ▼
-（无续作时 drain 结束，进程本地，无持久身份）
-```
+
+> 颜色含义：🟩 接纳入口 · 🟦 调度层 · 🟪 执行层 · ⬛ 终止
 
 ## 1. SessionV2.prompt —— 接纳入口
 

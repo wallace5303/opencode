@@ -9,24 +9,28 @@ opencode 不只是一个 CLI。它有完整的 HTTP 契约、生成的客户端�
 
 ## 全景
 
-```
-                    ┌─────────────┐
-   CLI / TUI ──────▶│  opencode   │── server (HttpApi) ──┐
-   (cli/tui 包)     │  (主包)     │                       │
-                    └─────────────┘                       ▼
-                                                ┌────────────────┐
-                                                │  HttpApi 契约   │
-                                                │  (protocol 包) │
-                                                └───────┬────────┘
-                                                        │ 生成
-                            ┌───────────────────────────┼───────────────────┐
-                            ▼                           ▼                   ▼
-                     client (Promise)           client (Effect)      sdk-next
-                            │                           │            (client+core+server)
-                            └──────────┬────────────────┘                   │
-                                       ▼                                    ▼
-                                  app / desktop / tui / web / session-ui   Embedded OpenCode
-                                  (SolidJS UI 表面)                       (同进程 in-memory)
+```mermaid
+graph TD
+    CLI["CLI / TUI<br/>(cli/tui 包)"] --> OP["opencode 主包"]
+    OP -->|server HttpApi| API["HttpApi 契约<br/>(protocol 包)"]
+    API -->|生成| CLP["client (Promise)"]
+    API -->|生成| CLE["client (Effect)"]
+    API -->|生成| SN["sdk-next<br/>(client+core+server)"]
+    CLP --> UI["app / desktop / tui / web / session-ui<br/>(SolidJS UI 表面)"]
+    CLE --> UI
+    SN --> EMB["Embedded OpenCode<br/>(同进程 in-memory)"]
+
+    classDef entry fill:#ea580c,stroke:#c2410c,color:#ffffff
+    classDef biz fill:#db2777,stroke:#be185d,color:#ffffff
+    classDef contract fill:#16a34a,stroke:#15803d,color:#ffffff
+    classDef clientN fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef surface fill:#374151,stroke:#1f2937,color:#ffffff
+
+    class CLI entry
+    class OP biz
+    class API contract
+    class CLP,CLE,SN clientN
+    class UI,EMB surface
 ```
 
 ## HttpApi：唯一的契约

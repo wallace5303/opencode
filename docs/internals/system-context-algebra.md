@@ -156,30 +156,34 @@ SessionContextEpoch.prepare (在 safe boundary 调用)
 
 ## 时序图（safe boundary 的参与者视角）
 
-```
-Runner        ContextEpoch    Registry        Sources        Store
-(boundary)       │              │               │              │
- │                │              │               │              │
- │──prepare──────▶│              │               │              │
- │                │──load────────▶│               │              │
- │                │              │──并行 load────▶│(env/date/..)│
- │                │              │◀──values───────│              │
- │                │              │   (Unavailable?→保留旧状态)   │
- │                │◀──packed─────│               │              │
- │                │              │               │              │
- │                │ 首次? initialize: 每个 baseline() → Generation{baseline,snapshot}
- │                │ 后续? reconcile(value, prevSnapshot):
- │                │         每个 source compare(prev) → Incompatible/Unchanged/Updated
- │                │         收集 Updated → update() 文本
- │                │         合并成一条 text
- │                │              │               │              │
- │                │──Updated? ──发 SessionEvent.ContextUpdated──────────────────▶│
- │                │              │               │   commit: advance(snapshot)  │ 写 SessionContextEpochTable
- │                │              │               │              │                │ + type:"system" 消息
- │◀──baseline + snapshot│        │               │              │                │
- │                │              │               │              │
- │  下个 provider turn 的 projected history 里:                                  │
- │    promoted user input / 工具结果  先于  合并的 system message                │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Runner (boundary)
+    participant CE as ContextEpoch
+    participant Reg as Registry
+    participant S as Sources
+    participant DB as Store
+
+    R->>CE: prepare
+    CE->>Reg: load
+    Reg->>S: 并行 load (env/date/..)
+    Note over S: Unavailable? → 保留旧状态
+    S-->>Reg: values
+    Reg-->>CE: packed
+    alt 首次
+        CE->>CE: initialize<br/>每个 baseline() → Generation{baseline,snapshot}
+    else 后续
+        CE->>CE: reconcile(value, prevSnapshot)<br/>每个 source compare → Incompatible/Unchanged/Updated
+        Note over CE: 收集 Updated → update() 文本<br/>合并成一条 text
+    end
+    rect rgb(254,243,199)
+    alt Updated
+        CE->>DB: 发 SessionEvent.ContextUpdated<br/>commit: advance(snapshot)<br/>写 EpochTable + type:"system" 消息
+    end
+    end
+    CE-->>R: baseline + snapshot
+    Note over R: 下个 provider turn 的 projected history 里:<br/>promoted input / 工具结果 先于 合并的 system message
 ```
 
 ## 相关文档

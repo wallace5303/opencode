@@ -17,17 +17,41 @@ const config: Config = {
 
   onBrokenAnchors: "throw",
   onBrokenLinks: "throw",
-  markdown: {
-    hooks: {
-      onBrokenMarkdownLinks: "warn",
-    },
-  },
 
   // 文档站本身独立于 opencode 主仓库，不开启 i18n
   i18n: {
     defaultLocale: "zh-CN",
     locales: ["zh-CN"],
   },
+
+  // Mermaid 图表支持：```mermaid 代码块渲染为可交互图
+  markdown: {
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: "warn",
+    },
+  },
+  themes: ["@docusaurus/theme-mermaid"],
+
+  // 本地全文搜索：构建时生成静态索引，无需 Algolia 后端
+  // language 含 "zh" 启用中文分词（lunr），匹配本站中文文档
+  plugins: [
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        indexDocs: true,
+        indexBlog: false,
+        indexPages: true,
+        language: ["en", "zh"],
+        hashed: true,
+        docsDir: "../docs",
+        blogDir: ".",
+        docsRouteBasePath: "docs",
+        searchResultLimits: 12,
+        searchContextByPaths: ["docs"],
+      },
+    ],
+  ],
 
   presets: [
     [
@@ -54,6 +78,28 @@ const config: Config = {
       defaultMode: "dark",
       disableSwitch: false,
       respectPrefersColorScheme: true,
+    },
+    // Mermaid 主题：明暗双主题 + opencode 绿主题变量
+    mermaid: {
+      theme: { light: "default", dark: "dark" },
+      options: {
+        themeVariables: {
+          primaryColor: "#16a34a",
+          primaryTextColor: "#ffffff",
+          primaryBorderColor: "#15803d",
+          lineColor: "#16a34a",
+          secondaryColor: "#bbf7d0",
+          tertiaryColor: "#dcfce7",
+          actorBkg: "#16a34a",
+          actorTextColor: "#ffffff",
+          actorBorderColor: "#15803d",
+          signalColor: "#374151",
+          labelColor: "#16a34a",
+          noteBkgColor: "#dcfce7",
+          noteTextColor: "#14532d",
+          noteBorderColor: "#16a34a",
+        },
+      },
     },
     navbar: {
       title: "OpenCode Docs",
