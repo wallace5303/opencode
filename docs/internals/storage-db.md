@@ -3,6 +3,9 @@ title: 存储与 #db 条件导入
 sidebar_position: 7
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # 存储与 `#db` 条件导入
 
 opencode 的持久化分两层：业务文件存储（`Storage` 服务）与数据库适配（`#db` 条件导入 + Drizzle）。文件在 `packages/opencode/src/storage/`。
@@ -23,10 +26,24 @@ opencode 的持久化分两层：业务文件存储（`Storage` 服务）与数�
 }
 ```
 
-代码里写 `import { ... } from "#db"`，运行时按条件解析：
+代码里写 `import { ... } from "#db"`，运行时按条件解析为不同适配文件：
 
-- **Bun** → `db.bun.ts`（用 `@effect/sql-sqlite-bun`）
-- **Node** → `db.node.ts`（用 Node 适配的 SQLite 驱动）
+<Tabs>
+  <TabItem value="bun" label="Bun 运行时" default>
+    解析到 `./src/storage/db.bun.ts`，底层用 `@effect/sql-sqlite-bun` 驱动（Bun 原生 SQLite）。
+    ```ts
+    // #db 在 Bun 下解析为：
+    import { ... } from "./src/storage/db.bun.ts"
+    ```
+  </TabItem>
+  <TabItem value="node" label="Node 运行时">
+    解析到 `./src/storage/db.node.ts`，用 Node 适配的 SQLite 驱动（`better-sqlite3` 路线）。
+    ```ts
+    // #db 在 Node 下解析为：
+    import { ... } from "./src/storage/db.node.ts"
+    ```
+  </TabItem>
+</Tabs>
 
 上层业务代码不关心跑在哪个运行时，`#db` 替你切换。这是 Node `imports` 条件导出机制（package.json `imports` + `#` 前缀的内部别名）。
 
@@ -67,21 +84,26 @@ Storage 是 **JSON 文件存储**（非 SQLite），migration 基于 FSUtil + Gi
 
 Drizzle 字段用 snake_case，**这样列名不必再用字符串重定义**：
 
-```ts
-// Good
-const table = sqliteTable("session", {
-  id: text().primaryKey(),
-  project_id: text().notNull(),
-  created_at: integer().notNull(),
-})
-
-// Bad
-const table = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  projectID: text("project_id").notNull(),
-  createdAt: integer("created_at").notNull(),
-})
-```
+<Tabs>
+  <TabItem value="good" label="✅ 推荐" default>
+    ```ts
+    const table = sqliteTable("session", {
+      id: text().primaryKey(),
+      project_id: text().notNull(),
+      created_at: integer().notNull(),
+    })
+    ```
+  </TabItem>
+  <TabItem value="bad" label="⛔ 避免">
+    ```ts
+    const table = sqliteTable("session", {
+      id: text("id").primaryKey(),
+      projectID: text("project_id").notNull(),
+      createdAt: integer("created_at").notNull(),
+    })
+    ```
+  </TabItem>
+</Tabs>
 
 ## SessionStore：会话持久化
 
