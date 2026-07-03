@@ -1,0 +1,78 @@
+---
+title: 配置
+sidebar_position: 6
+---
+
+# 配置
+
+opencode 的配置系统在 `packages/opencode/src/config/`，遵循**自导出模式**：每个子模块在文件顶部 `export * as ConfigX from "./x"`。Catalog（模型元数据）不在 opencode 包，在 core 包。
+
+## 配置模块
+
+| 文件 | 自导出 | 职责 |
+|---|---|---|
+| `config.ts:135` | `Config`（`@opencode/Config`） | 配置合并/加载/更新主服务 |
+| `agent.ts` | `ConfigAgent` | agent 配置加载（`load`/`loadMode`） |
+| `command.ts` | `ConfigCommand` | command 配置 |
+| `managed.ts` | `ConfigManaged` | managed 配置（Desktop 管理偏好） |
+| `parse.ts` | `ConfigParse` | JSONC 解析 + Schema 验证 |
+| `paths.ts` | `ConfigPaths` | 配置文件路径发现 |
+| `plugin.ts:79` | `ConfigPlugin` | plugin spec 解析与去重 |
+| `variable.ts` | `ConfigVariable` | 环境变量替换 |
+| `tui.ts` | `TuiConfig` | TUI 配置 |
+| `markdown.ts:36` | `ConfigMarkdown` | Markdown 配置 |
+
+> 新增 config 模块**必须**沿用 `export * as ConfigX from "./x"` 模式（`AGENTS.md` 明确要求）。
+
+## 加载链路
+
+`ConfigPaths` 发现配置文件 → `ConfigParse`（JSONC + Schema 验证）→ `ConfigVariable` 替换环境变量 → `Config` 合并多来源（默认值 + 全局 + 项目 + managed）→ 各子模块（`ConfigAgent`/`ConfigPlugin`/…）按需读取。
+
+## 主要配置项
+
+配置文件用 JSONC（带注释的 JSON）。常见 section：
+
+- `agent` — agent 定义与覆盖（`ConfigAgent`）
+- `mcp` — MCP 服务配置（local/remote）
+- `skills` — skill 路径与 URL（`paths` / `urls`）
+- `permission` — 权限规则（`ConfigPermissionV1`）
+- `tool_output` — 工具输出截断（`max_lines` / `max_bytes`）
+- `share` — 分享设置（`auto`）
+- `command` — 自定义命令（`ConfigCommand`）
+- `plugin` — 插件 spec（`ConfigPlugin`）
+- TUI 相关（`TuiConfig`）
+
+## Catalog（模型元数据）
+
+Catalog 是 provider/model 元数据的权威来源，在 **core** 包：
+
+| 文件 | 职责 |
+|---|---|
+| `packages/core/src/catalog.ts:47` | `Catalog.Interface`（provider/model get/update），`:62` `Service @opencode/v2/Catalog` |
+| `packages/core/src/models-dev.ts:15` | `CatalogModelStatus`；`:47` `Model` Schema；`:101` `Provider` Schema；`:121` `Service @opencode/v2/ModelsDev` |
+| `packages/core/src/plugin/models-dev.ts:142` | 插件通过 `ctx.catalog.transform` 注入/修改元数据 |
+
+opencode 侧 `provider/provider.ts:1318` 用 `mapValues(modelsDev, fromModelsDevProvider)` 把 ModelsDev 数据映射成 `catalog`。
+
+`ModelStatus`（`provider/model-status.ts`）：`alpha` / `beta` / `deprecated` / `active`。
+
+## 插件配置
+
+`ConfigPlugin`（`config/plugin.ts:79`）解析并去重 plugin spec。安装插件：
+
+```bash
+opencode plugin <module>      # 安装并更新配置
+opencode plugin <module> -g   # 全局
+```
+
+详见 [CLI 命令](./cli-commands.md#插件)。
+
+## 环境变量
+
+`ConfigVariable` 在配置解析后做环境变量替换。Provider 认证也优先取环境变量（见 [providers](./providers.md#认证)）。
+
+## 相关文档
+
+- 存储与 `#db`：[工程基建](../tooling.md#存储与-db)
+- Provider 与 Catalog 用法：[providers](./providers.md)
+- 风格约束（config 自导出模式）：[工程基建](../tooling.md#风格速查来自-agentsmd强制)
