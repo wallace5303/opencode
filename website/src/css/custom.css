@@ -24,3 +24,40 @@
   --ifm-color-primary-lightest: #44dcae;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/* —— theme-classic 细节微调（theme-mermaid 之外的自定义）—— */
+
+/* Mermaid 图表居中 + 上下留白，避免贴左 */
+.theme-doc-markdown-container .mermaid,
+.mdxPageContent .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+/* Mermaid SVG 过宽时自适应，不撑破布局 */
+.theme-doc-markdown-container .mermaid > svg,
+.mdxPageContent .mermaid > svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 代码块圆角 + 轻阴影，与卡片风格统一 */
+.theme-doc-markdown-container pre {
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* 首页 hero 用主色渐变，比纯色更有层次 */
+[class*="heroBanner"] {
+  background-image: linear-gradient(135deg, var(--ifm-color-primary) 0%, var(--ifm-color-primary-darker) 100%);
+}
+
+/* 表格行高微调：中文密度大时更易读 */
+table {
+  line-height: 1.7;
+}
+
+/* 404 页主标题放大 */
+.hero__title {
+  font-size: 4rem;
+}

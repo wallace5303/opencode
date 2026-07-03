@@ -9,6 +9,31 @@ sidebar_position: 8
 
 ## 推荐阅读顺序
 
+```mermaid
+graph LR
+    O["1 项目全景<br/>overview"] --> A["2 架构分层 ★<br/>architecture"]
+    A --> T["3 工程基建<br/>tooling"]
+    T --> G["4 术语表<br/>glossary"]
+    G -->|"第一遍直奔"| C["7 客户端与 UI<br/>clients-and-ui"]
+    G -.->|"想动 session 时啃"| R["5 运行时子系统<br/>runtime-subsystems"]
+    R --> S["6 Session V2 深度<br/>session-v2-deep-dive"]
+    S -.-> C
+
+    classDef base fill:#16a34a,stroke:#15803d,color:#ffffff
+    classDef deep fill:#7c3aed,stroke:#6d28d9,color:#ffffff
+    classDef multi fill:#2563eb,stroke:#1d4ed8,color:#ffffff
+    classDef star fill:#db2777,stroke:#be185d,color:#ffffff
+
+    class O,T,G base
+    class A star
+    class R,S deep
+    class C multi
+```
+
+> 色阶：🟩 基础必读 · 🩷 最重要（架构分层）· 🟪 深入可选（想动 session 时啃）· 🟦 多端收尾。实线 = 第一遍快速路径（1→2→3→4→7），虚线 = 留到后续的深入路径（4→5→6→7）。
+
+文字版（便于检索）：
+
 ```
 1. 项目全景        overview              建立整体印象
 2. 架构分层        architecture          记住依赖方向铁律 ← 最重要

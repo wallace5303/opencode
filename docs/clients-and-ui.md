@@ -3,6 +3,9 @@ title: 客户端与 UI
 sidebar_position: 7
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # 客户端与 UI
 
 opencode 不只是一个 CLI。它有完整的 HTTP 契约、生成的客户端、组合式 SDK，以及 SolidJS 写的多个 UI 表面。这章把它们串起来。
@@ -65,6 +68,57 @@ graph TD
 
 - 契约层面，`CONTEXT.md` 把它叫 **OpenCode Client**（生成 API）+ **Embedded OpenCode**（同进程宿主）
 - 中间表示叫 **SDK Contract IR**：运行时中性的编译表示，保留编/解码类型投影 + 传输元数据，让不同 SDK emitter 自选公开值模型
+
+### 三种用法对照
+
+同一份 HttpApi 契约，三种接入方式（API surface 均来自生成产物，以下为真实签名）：
+
+<Tabs>
+  <TabItem value="promise" label="Promise 客户端" default>
+    `@opencode-ai/client`，`make({ baseUrl })` 返回普通对象，方法返回 Promise。
+    ```ts
+    import { make } from "@opencode-ai/client"
+
+    const client = make({ baseUrl: "http://localhost:4096" })
+
+    const ok = await client.health.get()        // GET /api/health
+    const list = await client.sessions.list()   // GET /api/session
+    ```
+  </TabItem>
+  <TabItem value="effect" label="Effect 客户端">
+    `@opencode-ai/client/effect`，`OpenCode.make({ baseUrl })` 返回 `Effect`，方法也返回 `Effect`，需提供 `HttpClient` layer。
+    ```ts
+    import { Effect } from "effect"
+    import { FetchHttpClient } from "@effect/platform"
+    import { OpenCode } from "@opencode-ai/client/effect"
+
+    const program = Effect.gen(function* () {
+      const client = yield* OpenCode.make({ baseUrl: "http://localhost:4096" })
+      const ok = yield* client.health.get()
+      return ok
+    }).pipe(Effect.provide(FetchHttpClient.layer))
+
+    await Effect.runPromise(program)
+    ```
+  </TabItem>
+  <TabItem value="embedded" label="Embedded OpenCode（sdk-next）">
+    `@opencode-ai/sdk-next`，`OpenCode.layer` 在同进程内建 in-memory `HttpServer`，用 web handler 直接当 `fetch`，不经真实网络。
+    ```ts
+    import { Effect } from "effect"
+    import { OpenCode } from "@opencode-ai/sdk-next"
+
+    const program = Effect.gen(function* () {
+      const oc = yield* OpenCode.Service   // { ...client, tools: { register } }
+      const ok = yield* oc.health.get()
+      return ok
+    }).pipe(Effect.provide(OpenCode.layer))
+
+    await Effect.runPromise(program)
+    ```
+  </TabItem>
+</Tabs>
+
+> 三者用的是**同一套 group/endpoint**（`health`/`sessions`/`messages`/`models`/`providers`/…），区别只在传输层：Promise 走 `globalThis.fetch`，Effect 走 `HttpClient` layer，Embedded 走 in-memory web handler。
 
 ## UI 表面（SolidJS）
 

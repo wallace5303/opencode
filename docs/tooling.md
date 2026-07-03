@@ -3,6 +3,9 @@ title: 工程基建
 sidebar_position: 4
 ---
 
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
 # 工程基建
 
 读完这章，你能在本地把 opencode 跑起来、改完代码跑对检查、并理解配置与存储的底层约定。
@@ -129,7 +132,18 @@ opencode 侧 `provider/provider.ts` 用 `mapValues(modelsDev, fromModelsDevProvi
 }
 ```
 
-代码里写 `import { ... } from "#db"`，Bun 运行时解析到 `db.bun.ts`，Node 解析到 `db.node.ts`。这样上层业务代码不用关心运行时。
+代码里写 `import { ... } from "#db"`，运行时按条件解析：
+
+<Tabs>
+  <TabItem value="bun" label="Bun 运行时" default>
+    解析到 `db.bun.ts`，用 `@effect/sql-sqlite-bun`（Bun 原生 SQLite）。
+  </TabItem>
+  <TabItem value="node" label="Node 运行时">
+    解析到 `db.node.ts`，用 Node 适配的 SQLite 驱动。
+  </TabItem>
+</Tabs>
+
+这样上层业务代码不用关心运行时。
 
 `src/storage/` 下可见：
 
@@ -140,20 +154,25 @@ opencode 侧 `provider/provider.ts` 用 `mapValues(modelsDev, fromModelsDevProvi
 
 **snake_case**。这样列名不必再用字符串重定义：
 
-```ts
-// Good
-const table = sqliteTable("session", {
-  id: text().primaryKey(),
-  project_id: text().notNull(),
-  created_at: integer().notNull(),
-})
-
-// Bad
-const table = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  projectID: text("project_id").notNull(),
-})
-```
+<Tabs>
+  <TabItem value="good" label="✅ 推荐" default>
+    ```ts
+    const table = sqliteTable("session", {
+      id: text().primaryKey(),
+      project_id: text().notNull(),
+      created_at: integer().notNull(),
+    })
+    ```
+  </TabItem>
+  <TabItem value="bad" label="⛔ 避免">
+    ```ts
+    const table = sqliteTable("session", {
+      id: text("id").primaryKey(),
+      projectID: text("project_id").notNull(),
+    })
+    ```
+  </TabItem>
+</Tabs>
 
 ## 风格速查（来自 `AGENTS.md`，强制）
 

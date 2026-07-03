@@ -48,7 +48,12 @@ const config: Config = {
         blogDir: ".",
         docsRouteBasePath: "docs",
         searchResultLimits: 12,
-        searchContextByPaths: ["docs"],
+        // 搜索分区：可按"功能文档"/"实现原理"缩小范围；默认搜全部
+        searchContextByPaths: [
+          { label: "功能文档", path: "docs/features" },
+          { label: "实现原理", path: "docs/internals" },
+        ],
+        useAllContextsWithNoSearchContext: true,
       },
     ],
   ],
