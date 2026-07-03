@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Bash(rm:*)",
+      "Read(//Users/gsx/.claude/**)",
+      "Read(//private/tmp/**)",
+      "Read(//tmp/**)",
+      "WebSearch",
+      "WebFetch(domain:ui.nuxt.com)",
+      "WebFetch(domain:ui3.nuxt.dev)",
+      "WebFetch(domain:www.kaka996.com)",
+      "Skill(update-config)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs"
+    ],
+    "deny": [
+      "Bash(rm * /)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf $HOME)"
+    ]
+  }
+}

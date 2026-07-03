@@ -1,0 +1,26 @@
+/**
+ * 仅覆盖主题变量；其余沿用 @docusaurus/preset-classic 的 Infima 默认值。
+ * 主色取自 opencode 官方文档 (packages/docs/docs.json) 的 primary #16A34A。
+ */
+:root {
+  --ifm-color-primary: #16a34a;
+  --ifm-color-primary-dark: #14913f;
+  --ifm-color-primary-darker: #12863b;
+  --ifm-color-primary-darkest: #0f6e31;
+  --ifm-color-primary-light: #1bb555;
+  --ifm-color-primary-lighter: #1dc05b;
+  --ifm-color-primary-lightest: #3ccd70;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #07c983;
+  --ifm-color-primary-dark: #06b574;
+  --ifm-color-primary-darker: #06aa6e;
+  --ifm-color-primary-darkest: #058c5a;
+  --ifm-color-primary-light: #1ecf91;
+  --ifm-color-primary-lighter: #28d29a;
+  --ifm-color-primary-lightest: #44dcae;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

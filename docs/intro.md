@@ -1,0 +1,31 @@
+---
+title: 开始阅读
+sidebar_position: 0
+---
+
+# opencode 学习文档
+
+这套文档用来拆解 [**opencode**](https://github.com/sst/opencode) —— 一个开源的 AI 编码 agent。它的本体在相邻的 `../opencode` 目录（Bun + TypeScript monorepo）。本仓库（`opencode-docs`）只存放学习笔记与一个 Docusaurus 文档站。
+
+## 这套文档讲什么
+
+- **项目全景**：opencode 是什么、技术栈、monorepo 地图 → [项目全景](./overview.md)
+- **架构分层**：Schema → Core/Protocol → Server 的依赖铁律，包关系图 → [架构分层](./architecture.md)
+- **术语表**：基于 `CONTEXT.md` 的规范化术语，中英对照 → [术语表](./glossary.md)
+
+后续会补齐工程基建、运行时子系统、Session V2 深度、多端与 SDK 等章节。
+
+## 怎么读
+
+如果你是第一次接触这个项目：
+
+1. 先读 [项目全景](./overview.md)，建立整体印象；
+2. 再读 [架构分层](./architecture.md)，记住**依赖方向铁律**——它是理解一切的骨架；
+3. 遇到不熟悉的词，查 [术语表](./glossary.md)；
+4. 想动手时，回到 `../opencode` 按 `packages/opencode/src/cli/cmd/` 的命令入口顺藤摸瓜。
+
+## 约定
+
+- 文档里引用源码一律写成 `packages/xxx/src/yyy.ts:行号` 的形式，可点击跳转。
+- 术语严格使用 `CONTEXT.md` 的规范词（如 **System Context**、**Provider Turn**、**Session Drain**），不使用"系统提示词"这类口语化说法。
+- 文档基于 opencode `v1.17.13` 前后的代码状态，若代码后续重构，引用路径可能漂移。
