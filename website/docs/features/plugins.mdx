@@ -1,0 +1,102 @@
+---
+title: 插件系统
+description: opencode 插件系统：内置 auth 插件 + 外部 npm/file 插件加载、20+ hook、scope(global/local) 跟踪、workspace adapter 注册，以及 hook 触发链。
+sidebarTitle: 插件系统
+---
+
+opencode 的可扩展性很大程度靠插件。`Plugin` 服务（`packages/opencode/src/plugin/index.ts:58`，`@opencode/Plugin`）负责加载内部 + 外部插件，并在各扩展点触发 hook。
+
+## 加载
+
+`Plugin.init`（`plugin/index.ts:300`）启动时的加载顺序：
+
+1. **内部插件**：内置 auth 插件（Codex / Copilot / Gitlab / Poe / Cloudflare / Azure / DigitalOcean / Snowflake / Xai）。
+2. **外部插件**：`PluginLoader.loadExternal`（`packages/opencode/src/plugin/loader.ts:208`）——resolve / install / 兼容性检查 / import。
+   - 来源：npm 包（`opencode-plugin-*` 前缀）或本地文件路径。
+   - config `plugin` section 声明。
+3. 载入后依次：调 `hook.config`（读插件配置）→ 订阅 event 调 `hook.event` → finalize 时调 `hook.dispose`。
+
+## Scope
+
+每个插件带 `scope: "global" | "local"` 标签——区分全局安装还是项目级。scope 影响生命周期与配置合并。
+
+## Hook
+
+`Hooks` 接口（`packages/plugin/src/index.ts:222`）定义全部扩展点。每个 hook 是 `(input, output) => output | Effect`——**接收并返回 mutated output**，串成管线。
+
+### hook 清单
+
+| hook | 触发时机 | 作用 |
+|---|---|---|
+| `config` | 插件加载 | 读写插件配置 |
+| `event` | 任意事件发布 | 订阅事件流（副作用） |
+| `dispose` | 插件卸载 | 清理资源 |
+| `auth` | provider auth 解析 | 注入/改写 auth（内置 auth 插件用） |
+| `provider` | provider state init | 注册自定义 provider/loader |
+| `tool` | 工具注册 | 提供自定义工具（Zod schema） |
+| `tool.definition` | 工具物化时 | 动态修改工具定义 |
+| `tool.execute.before` | 工具执行前 | 前置拦截/改参数 |
+| `tool.execute.after` | 工具执行后 | 后置处理结果 |
+| `permission.ask` | 权限 ask 时 | 改写权限判定 |
+| `shell.env` | shell 工具执行 | 注入环境变量 |
+| `chat.message` | 消息处理 | 改写消息 |
+| `chat.params` | 构造请求参数 | 改写请求参数 |
+| `chat.headers` | 构造请求 header | 改写 HTTP header |
+| `command.execute.before` | CLI 命令执行前 | 前置拦截 |
+| `experimental.chat.messages.transform` | 消息变换（实验） | 批量改历史消息 |
+| `experimental.chat.system.transform` | system 装配 | 改 system prompt（agent 生成用） |
+| `experimental.provider.small_model` | 小模型选择 | 注入小模型路由 |
+| `experimental.session.compacting` | compaction 前 | 拦截/改摘要策略 |
+| `experimental.compaction.autocontinue` | compaction 后 | 决定是否自动续跑 |
+| `experimental.text.complete` | 文本补全 | 文本补全 hook |
+
+> `experimental.*` 是不稳定 hook，后续可能调整。
+
+## 触发链
+
+`Plugin.trigger`（`plugin/index.ts:280`）按**插件加载顺序**逐个调用同名 hook，每个 hook 接收上一个的 output 作为 input：
+
+```ts
+// 精简：trigger 串联所有插件的同一 hook
+for (const plugin of plugins) {
+  output = yield* plugin.hooks[name](input, output)
+}
+return output
+```
+
+所以 hook 是**有序管线**，不是并发广播。插件顺序由加载顺序决定。
+
+## 工具桥接：Zod → Effect Schema
+
+插件用 `tool` hook 注册工具时用 **Zod** schema（插件面向的稳定 API），opencode 内部用 **Effect Schema**。`ToolRegistry` 的 `fromPlugin`（`packages/opencode/src/tool/registry.ts:113`）做桥接转换。详见 [工具注册与权限](../internals/tool-registry-permissions)。
+
+## 自定义插件示例
+
+```ts
+// my-plugin/index.ts
+export default definePlugin({
+  id: "my-plugin",
+  scope: "local",
+  hooks: {
+    tool: (tool) => {
+      // 注册自定义工具
+      tool.my_greet = { description: "打招呼", execute: async (args) => ({ text: `hi ${args.name}` }) }
+      return tool
+    },
+    "tool.execute.before": (input) => {
+      console.log("工具将执行:", input.id)
+      return input
+    },
+  },
+})
+```
+
+config 启用：
+
+```jsonc
+{ "plugin": { "my-plugin": { "enabled": true } } }
+```
+
+## 与 auth 插件的关系
+
+内置 auth 插件（Codex/Copilot 等）本质是用 `auth` hook + `provider` hook 注入厂商专属的 OAuth 流程和 provider loader。它们和外部插件走同一套机制——只是内置且不可卸载。详见 [认证](./auth)。

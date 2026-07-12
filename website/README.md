@@ -32,7 +32,7 @@ opencode-docs/
 ```bash
 cd website
 pnpm install         # 安装 mintlify CLI
-pnpm dev             # 开发服务器（默认 http://localhost:3000）
+pnpm dev             # 开发服务器（http://localhost:3011）
 pnpm build           # 生产构建
 pnpm lint            # 检查失效链接（mintlify broken-links）
 ```

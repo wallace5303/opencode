@@ -19,6 +19,20 @@
         ]
       },
       {
+        "group": "自己造一个",
+        "pages": [
+          "docs/build/introduction",
+          "docs/build/01-agent-loop",
+          "docs/build/02-session-state",
+          "docs/build/03-context-management",
+          "docs/build/04-tool-system",
+          "docs/build/05-multi-provider",
+          "docs/build/06-mcp-skills",
+          "docs/build/07-http-contract",
+          "docs/build/08-putting-together"
+        ]
+      },
+      {
         "group": "架构与原理",
         "pages": [
           "docs/architecture",
@@ -39,6 +53,9 @@
           "docs/features/sessions",
           "docs/features/config",
           "docs/features/multi-platform",
+          "docs/features/mcp",
+          "docs/features/plugins",
+          "docs/features/auth",
           "docs/features/docs-site"
         ]
       },
@@ -52,6 +69,8 @@
           "docs/internals/system-context-algebra",
           "docs/internals/httpapi-codegen",
           "docs/internals/storage-db",
+          "docs/internals/snapshot-revert",
+          "docs/internals/project-worktree-share",
           "docs/internals/embedded-opencode"
         ]
       }

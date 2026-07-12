@@ -1,0 +1,79 @@
+---
+title: MCP
+description: opencode 的 MCP 客户端实现：stdio/sse/streamable-http 三传输、OAuth 动态客户端注册、自动重连与工具列表变更通知、MCP 工具到 Tool.Def 的转换。
+sidebarTitle: MCP
+---
+
+[MCP](https://modelcontextprotocol.io/)（Model Context Protocol）让外部工具服务以标准协议接入 opencode，变成 agent 可用的工具。`MCP` 服务（`packages/opencode/src/mcp/index.ts:193`，`@opencode/MCP`）实现了完整客户端。
+
+> MCP 与内置工具、Skill 的关系见 [Agent、Skill 与 MCP](./agents-and-skills)。build 线的取舍视角见 [06 · MCP 与 Skill](../build/06-mcp-skills)。
+
+## 配置
+
+config 的 `mcp` section 声明 MCP server：
+
+```jsonc
+{
+  "mcp": {
+    "filesystem": {
+      "type": "local",            // stdio 子进程
+      "command": ["npx", "@modelcontextprotocol/server-filesystem", "/path"]
+    },
+    "github": {
+      "type": "remote",           // 远程 HTTP
+      "url": "https://api.githubcopilot.com/mcp/",
+      "enabled": true
+    }
+  }
+}
+```
+
+## 传输
+
+`MCP.create`（`mcp/index.ts:364`）按 `type` 选传输：
+
+| type | 传输 | 位置 |
+|---|---|---|
+| `local` | `StdioClientTransport`（子进程） | `mcp/index.ts:339` |
+| `remote`（新） | `StreamableHTTPClientTransport` | `mcp/index.ts:264` |
+| `remote`（旧） | `SSEClientTransport`（回退） | `mcp/index.ts:271` |
+
+remote 先试 streamable-http，失败回退 sse。Unauthorized → 置 `needs_auth` 状态（`StatusNeedsAuth`，`mcp/index.ts:93`），触发 OAuth 流程。
+
+## OAuth
+
+remote server 可能要求 OAuth。`McpOAuthProvider`（`packages/opencode/src/mcp/oauth-provider.ts:26`）实现 `OAuthClientProvider`，回调端口 `OAUTH_CALLBACK_PORT = 19876`（`oauth-provider.ts:11`）——本地起临时 HTTP server 接授权回调。
+
+- 用**动态客户端注册（DCR）**：运行时向 server 注册自己为 client，无需预注册 client id。
+- token 存 `mcp-auth.json`（`mcp/auth.ts:37`），权限 `0o600`（`auth.ts:80`），每 server 一份。
+- `McpAuth` 服务（`auth.ts:55`）用 `EffectFlock` 并发保护读写。
+
+`needs_auth` 的 server 在 `opencode auth login` 后才可用。
+
+## 自动重连与工具列表变更
+
+`watch`（`mcp/index.ts:434`）维护连接活性：
+
+- `client.onclose`（`:435`）：连接断开 → 自动重连 + 重新拉工具列表。
+- `ToolListChangedNotification`（`:454`）：server 主动通知「工具变了」→ 重新 `McpCatalog.defs()`。
+
+所以 MCP server 热更新工具定义，opencode 不用重启即可见。
+
+## 工具转换
+
+MCP 工具要变成 opencode 的 `Tool.Def`（见 [工具](./tools)）才能给 runner 用。`McpCatalog`（`packages/opencode/src/mcp/catalog.ts`）负责：
+
+- `defs(client, timeout)`（`catalog.ts:38`）：拉一个 server 的全部工具定义。
+- `convertTool(mcpTool, client, timeout)`（`catalog.ts:42`）：转单个工具。
+  - 名字 = `{clientName}_{toolName}`（`sanitize`，`catalog.ts:117`，非 `[a-zA-Z0-9_-]` 转 `_`）——防不同 server 同名冲突。
+  - 参数 schema：MCP JSON schema → Effect Schema。
+  - 包成 `dynamicTool`，`execute` 走 MCP `callTool`。
+
+## 超时与进程清理
+
+- 工具调用带 `timeout`（`convertTool` 的第三参），超时取消。
+- local server 子进程随 opencode 进程退出清理（`StdioClientTransport` 生命周期）。
+
+## 与权限的关系
+
+MCP 工具同样受 [权限系统](../internals/tool-registry-permissions) 约束——不是「外部工具就放行」。MCP 工具的 `id` 是 `{clientName}_{toolName}`，可在 config `permission` 里按这个名字配 allow/deny/ask。

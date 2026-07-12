@@ -1,0 +1,111 @@
+---
+title: 06 · MCP 与 Skill
+description: opencode 接入外部能力两条路：MCP（stdio/sse/streamable-http 三传输 + OAuth 动态注册 + 自动重连 + 工具列表变更通知）和 Skill（多源发现 + 权限过滤 + 注入为 system context）。
+sidebarTitle: 06 MCP 与 Skill
+---
+
+工具系统（[04](./04-tool-system)）讲的是 opencode **自带**的工具。但一个 coding agent 的能力不该全靠内置——用户要接自己的工具服务器、要复用社区的 skill。opencode 用两条路接入外部能力：**MCP**（标准化外部工具协议）和 **Skill**（可发现、可注入的能力包）。
+
+> 源码：`packages/opencode/src/mcp/`、`packages/opencode/src/skill/`、`packages/core/src/skill/guidance.ts`。功能概览见 [MCP](../features/mcp) 与 [Agent 与 Skill](../features/agents-and-skills)。
+
+## MCP：标准外部工具协议
+
+[MCP](https://modelcontextprotocol.io/) 是「工具的 USB-C」——一个协议接所有工具服务器。opencode 的 `MCP.Service`（`packages/opencode/src/mcp/index.ts:193`）实现了完整客户端。
+
+### 三种传输
+
+`create`（`mcp/index.ts:364`）按配置选传输：
+
+| 传输 | 场景 | 实现 |
+|---|---|---|
+| **stdio** | local 工具服务器（子进程） | `StdioClientTransport`（`mcp/index.ts:339`） |
+| **streamable-http** | remote，新版协议 | `StreamableHTTPClientTransport`（`:264`） |
+| **sse** | remote，旧版协议 | `SSEClientTransport`（`:271`） |
+
+remote 先试 streamable-http，失败回退 sse。如果返回 Unauthorized，置 `needs_auth` 状态（`StatusNeedsAuth`，`mcp/index.ts:93`）——触发 OAuth 流程。
+
+### OAuth：动态客户端注册
+
+remote MCP 服务器可能要 OAuth。`McpOAuthProvider`（`packages/opencode/src/mcp/oauth-provider.ts:26`）实现 OAuth client provider，回调端口 `OAUTH_CALLBACK_PORT = 19876`（`oauth-provider.ts:11`）——本地起临时 server 接回调。
+
+token 存 `mcp-auth.json`（`mcp/auth.ts:37`），权限 `0o600`（`auth.ts:80`）。每个 MCP server 一份 token，用 `EffectFlock` 并发保护。
+
+> 设计取舍：**动态客户端注册（DCR）** 而非预注册 client id——因为 MCP 服务器是用户自带的各种来源，不可能预注册。DCR 让 opencode 运行时向服务器注册自己成为一个 client。
+
+### 自动重连 + 工具列表变更
+
+`watch`（`mcp/index.ts:434`）维护连接活性：
+
+- **`client.onclose`**（`:435`）：连接断了自动重连 + 重新拉工具列表。
+- **`ToolListChangedNotification`**（`:454`）：服务器主动通知「工具变了」→ 重新 `McpCatalog.defs()` 拉最新列表。
+
+所以 MCP 服务器热更新工具，opencode 不用重启就能看到。
+
+### 工具转换
+
+MCP 工具要变成 opencode 的 `Tool.Def` 才能给 runner 用。`McpCatalog.convertTool`（`packages/opencode/src/mcp/catalog.ts:42`）做这事：
+
+- 名字 = `{clientName}_{toolName}`（`sanitize`，`catalog.ts:117`，非字母数字下划线横线转 `_`）——防止不同 server 的同名工具冲突。
+- 参数 schema 从 MCP JSON schema 转成 Effect Schema。
+- 包成 `dynamicTool`，execute 时走 MCP `callTool`。
+
+`defs()`（`catalog.ts:38`）拉一个 server 的全部工具定义。
+
+## Skill：可发现的能力包
+
+Skill 是 opencode 的另一条外部能力路——不是「外部工具」，而是**可发现、可注入的能力包**（一段指令 + 可选资源/工具，类似 Claude 的 skill 概念）。
+
+### 多源发现
+
+`discoverSkills`（`packages/opencode/src/skill/index.ts:173`）扫描多个来源：
+
+1. **全局** `~/.claude/skills/`（`CLAUDE_EXTERNAL_DIR = ".claude"`，`skill/index.ts:21`；模式 `EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"`，`:23`）。
+2. **项目** `.claude/skills/`、`.agents/`。
+3. **config paths**：用户在 `opencode.json` 里配的额外路径。
+4. **远程 URL**：`discovery.ts:49` 的 `pull`，拉 `{base}/index.json`（`discovery.ts:51`）——可以托管一个 skill 仓库，opencode 自动拉取。
+
+每个 skill 由一个 `SKILL.md`（frontmatter + body）描述。
+
+### 权限过滤
+
+`available`（`skill/index.ts:310`）按 **agent 权限**过滤——不是所有 skill 都给所有 agent。explore agent 可能只读类 skill，build agent 才给写类 skill。
+
+### 注入为 system context
+
+这是 skill 的关键机制——它**不是工具**，而是**注入到 system context**。`core/skill-guidance` source（`packages/core/src/skill/guidance.ts:58` 的 key）把可用 skill 渲染成 `<available_skills>` XML（`guidance.ts:23`），作为 System Context 的一部分（见 [03 · 上下文管理](./03-context-management)）。
+
+```xml
+<available_skills>
+  <skill name="pdf-reader" when-to-use="读取 PDF 文件时" />
+  <skill name="git-workflow" when-to-use="处理复杂 git 操作时" />
+</available_skills>
+```
+
+模型看到这段 XML，就知道「有这些 skill 可用」，需要时通过 `skill` 工具加载具体 skill 的指令。
+
+> 设计取舍：**为什么不把 skill 全文塞进 system prompt？** 因为 skill 可能很多，全塞会撑爆 context。只列「名字 + when-to-use」让模型知道**有什么**，需要时再按需加载**全文**。这是「目录 vs 全文」的懒加载思路。
+
+## MCP vs Skill：什么时候用哪个
+
+| 维度 | MCP | Skill |
+|---|---|---|
+| 本质 | 外部**工具**（有 execute） | 能力**指令**（有 guidance） |
+| 形态 | 独立 server 进程 | `SKILL.md` 文件/远程 |
+| 注入方式 | 注册为工具，模型 tool-call | 注入为 system context XML，模型按需加载 |
+| 适合 | 有副作用的操作（查 DB、调 API、操作外部系统） | 知识/流程指导（怎么审 PR、怎么写迁移脚本） |
+
+两者不互斥——一个能力可以同时是 MCP 工具（执行）+ Skill（指导什么时候用）。
+
+## 自建最小子集
+
+接入外部能力这块，最小可用版：
+
+1. **先不做 MCP**：MCP 客户端实现复杂（三传输 + OAuth + 重连）。最小版先把内置工具做好。
+2. **先不做 Skill**：skill 发现/注入也不简单。最小版用静态 system prompt 描述能力。
+3. **如果非要接外部**：先只支持 MCP **stdio** 一种传输——local 子进程，没有 OAuth、没有重连复杂度。streamable-http/sse/OAuth 后加。
+
+可以**先不做**的：MCP remote 传输、OAuth DCR、自动重连、工具列表变更通知、远程 skill 仓库。这些是「外部能力生态」的要求，最小版单机内置工具就够。
+
+> 如果你的目标就是「自用」agent，MCP 和 Skill 都可以最后做——它们解决的是「能力可扩展性」，不是「能不能跑」。但如果你要做产品给别人用，MCP 支持几乎是 must-have（用户自带工具服务器）。
+
+> 上一节 [05 · 多 Provider](./05-multi-provider) · 下一节 [07 · HTTP 契约驱动多端](./07-http-contract)

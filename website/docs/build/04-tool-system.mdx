@@ -1,0 +1,194 @@
+---
+title: 04 · 工具系统
+description: opencode 工具系统：Tool.Def 统一定义、ToolRegistry 注册与按模型/agent 过滤、输出截断+托管文件、权限统一拦截（含 shell tree-sitter 静态分析）、子 agent task 派生。
+sidebarTitle: 04 工具系统
+---
+
+agent 能干活靠工具。但工具系统不是「写一堆 if」——它要解决：**怎么统一注册**、**参数怎么校验**、**输出太长怎么办**、**危险操作怎么拦**、**子 agent 权限怎么派生**。opencode 用一套 `Tool.Def` + `ToolRegistry` + 统一权限拦截把这些问题收敛到一处。
+
+> 源码：`packages/opencode/src/tool/`、`packages/opencode/src/permission/`。深度参考见 [工具注册与权限](../internals/tool-registry-permissions)。
+
+## Tool.Def：统一接口
+
+所有工具（内置 + 自定义 + MCP）都实现同一个 `Tool.Def`（`packages/opencode/src/tool/tool.ts:55`）：
+
+```ts
+// tool.ts:55-65（精简）
+export interface Def<Parameters, M extends Metadata = Metadata> {
+  id: string
+  description: string
+  parameters: Parameters        // Effect Schema，用于参数校验 + 生成 JSON schema 给模型
+  execute: (args, ctx: Context) => Effect.Effect<ExecuteResult<M>>
+  // ... metadata、权限声明等
+}
+```
+
+`Tool.define`（`tool.ts:151`）是构造器，它**自动包截断 + 注入 agent services**（`Context` 里带着 `ask` 权限方法、project 信息等）。
+
+关键设计：
+
+- **参数用 Effect Schema**：不是手写 JSON schema，而是用 Schema 定义参数类型——既能在运行时校验入参，又能自动生成给模型看的 JSON schema。
+- **`execute` 返回 `Effect`**：工具天然是异步、可中断、可失败的。用 Effect 表达后，权限拦截、超时、取消都能用 Effect 的组合子统一处理。
+- **`Context` 注入**：工具不直接访问全局，而是通过 `ctx` 拿 `ask`（权限）、project、worktree 等。这让工具可测试、可作用域化。
+
+## ToolRegistry：注册与过滤
+
+`ToolRegistry`（`packages/opencode/src/tool/registry.ts:69` 接口、`:80` Service）是工具的中央仓库。
+
+### 来源
+
+`all()`（`registry.ts:242`）返回 **builtin + custom** 两类工具：
+
+- **builtin**：`shell`、`read`、`glob`、`grep`、`edit`、`write`、`task`、`fetch`、`todo`、`search`、`skill`、`patch`、`question`、`lsp`、`plan` 等 15+ 内置工具。
+- **custom**：项目里 `tools/*.{js,ts}` 文件 + 插件通过 `tool` hook map 注册的工具。`fromPlugin`（`registry.ts:113`）负责把插件的 **Zod** schema 桥接成 Effect Schema——插件作者用 Zod，opencode 内部用 Effect，这里做转换。
+
+### 过滤：`tools()`
+
+`tools()`（`registry.ts:266`）不是返回全部，而是**按模型/provider/agent 过滤**：
+
+```ts
+// registry.ts:266（精简）
+const tools = Effect.fn("ToolRegistry.tools")(function* (input) {
+  const filtered = (yield* all()).filter((tool) => {
+    // webSearch 工具要看 provider 是否启用 exa/parallel
+    // task 工具的描述要按 agent 定制（describeTask）
+    // patch 工具只给特定 gpt 模型
+    ...
+  })
+  // 对每个工具触发 plugin.trigger("tool.definition")，允许插件改定义
+  return yield* Effect.all(filtered.map(...))
+})
+```
+
+- **按模型**：如 `patch` 工具只给某些 gpt 模型（`usePatch` 判定）。
+- **按 provider**：如 websearch 要看 provider 是否配了 exa。
+- **按 agent**：`task` 工具的 description 会用 `describeTask(input.agent)` 按当前 agent 重写。
+- **插件 hook**：过滤后对每个工具触发 `tool.definition` hook（见 [06 · MCP 与 Skill](./06-mcp-skills)），插件能动态修改工具定义。
+
+> 这就是为什么不同 agent 看到的工具集不同——不是硬编码，而是过滤管线。
+
+## 输出截断 + 托管文件
+
+工具输出可能巨大（`grep` 整个 monorepo、`read` 一个 10 万行的文件）。直接塞回模型 context 会爆炸。`truncate.ts` 的策略（`packages/opencode/src/tool/truncate.ts`）：
+
+```ts
+// truncate.ts:15-16
+export const MAX_LINES = 2000
+export const MAX_BYTES = 50 * 1024   // 50 KB
+```
+
+超限处理（`truncate.ts:68` 的 `write`）：
+
+1. 超过 `MAX_LINES` / `MAX_BYTES` 的输出，**全文写到** `Global.Path.data/tool-output/{id}` 托管文件。
+2. 返回给模型的只是 **preview**（前若干行）+ 一条提示「输出已截断，全文见 {path}」。
+3. 如果 session 启用了 `task` 工具，提示会建议「用 explore 子 agent 查全文」——避免主 agent context 被巨型输出撑爆。
+
+> 设计取舍：**为什么写文件而不是直接丢？** 因为模型可能确实需要全文。写托管文件 + 给路径，让模型决定要不要用子 agent 去读。直接丢等于丢信息，直接塞等于撑爆 context。
+
+## 权限：统一拦截
+
+权限是工具系统最敏感的部分。opencode 把所有危险操作的拦截收敛到 `permission/index.ts` 一处。
+
+### 规则模型
+
+权限规则是通配符匹配（`permission/index.ts:28` 的 `evaluate`）：
+
+- 每条规则 `{ action: "allow" | "deny" | "ask", permission, pattern }`。
+- `evaluate` 用 `findLast` 找最后一个匹配的规则——**后声明、更具体的规则胜**。
+- 默认（无匹配）：`{ ask, "*" }`——**默认问用户**，不是默认放行。
+
+### `ask` 流程
+
+工具执行前调 `ctx.ask`（`permission/index.ts:67`）：
+
+1. 对每个 pattern 评估 ruleset（config 规则 + session 已批准规则）。
+2. 命中 `deny` → 直接拒。
+3. 全 `allow` → 跳过，静默执行。
+4. 任一 `ask` → 建 pending、发 `Event.Asked`、`await Deferred`——**阻塞等用户决定**。
+
+### `reply`：兄弟请求级联
+
+用户回复（`permission/index.ts:109`）有三种：
+
+- **`once`**：只放行这一次。
+- **`always`**：加一条 allow 规则到 session，**并自动放行同 session 其他已满足的 pending**——用户不用逐个点。
+- **`reject`**：级联拒所有 pending。
+
+> 这是体验关键：一个 `always` 能一次解决多个同类请求，而不是「点 10 次允许」。
+
+### config 规则
+
+`fromConfig`（`permission/index.ts:186`）把 config 里的权限声明拍平成规则：
+
+```jsonc
+// config 示例
+{
+  "permission": {
+    "shell": "allow",              // 所有 shell 放行
+    "edit": { "/secret/*": "deny" } // 编辑 /secret 下文件拒绝
+  }
+}
+```
+
+`disabled`（`:204`）：找 `pattern === "*" && action === "deny"` 的工具——直接从工具集移除。
+
+## shell：tree-sitter 静态分析
+
+`shell` 工具是最危险也最常用的。opencode 不只是把命令丢给 shell 跑——它先用 **tree-sitter** 静态分析命令（`packages/opencode/src/tool/shell.ts`）：
+
+```ts
+// shell.ts:257（精简）
+const parse = Effect.fn("ShellTool.parse")(function* (command, ps) {
+  const tree = yield* Effect.promise(() =>
+    parser().then((p) => (ps ? p.ps : p.bash).parse(command)))
+  // 遍历 AST，抽出命令名、参数、重定向目录、glob pattern
+})
+```
+
+- tree-sitter 加载 bash + powershell 两个 grammar（`shell.ts:311` 的 `parser`）。
+- 解析出 `scan.patterns`（命令模式）和 `scan.dirs`（涉及的目录）。
+- `ask`（`shell.ts:263`）据此触发权限：
+  - `scan.dirs.size > 0` 且目录在 project 边界外 → 触发 `external_directory` 权限（`:270`）。
+  - `scan.patterns.size > 0` → 触发 `shell` 权限（`:283`）。
+
+> 设计取舍：**为什么静态分析而不是只看命令字符串？** 因为 `cd /etc && cat passwd` 这种命令，字符串匹配会漏。AST 能识别出「这条命令碰了 project 外的目录」。当然静态分析有局限——`eval`、`sh -c`、动态拼接会绕过。opencode 把它当作「减少打扰」的启发式，不是安全边界（安全边界是权限 ask + 用户确认）。
+
+shell 还做：流式 stdout/stderr（`shell.ts:486`，`Stream.runForEach` 增量消费）、超时、abort、输出截断。
+
+## task：子 agent 派生
+
+`task` 工具（`packages/opencode/src/tool/task.ts`）让 agent 派生子 agent 跑独立任务——这是「explore 大代码库不撑爆主 context」的关键。
+
+- **权限派生**（`task.ts:125`）：调 `deriveSubagentSessionPermission`，子 agent 继承父 session 的 deny 规则 + external_directory，并自动补 `todowrite:deny`、`task:deny`（防止子 agent 再派生无限嵌套）。
+- **前台/后台**（`task.ts:259`）：`background.start` 把子 agent 跑成 `BackgroundJob`，完成后回注父 session；前台则直接等结果。
+- 子 agent 有独立的 session、独立 context epoch、独立工具集。
+
+## external-directory：边界检查
+
+`external-directory.ts`（`packages/opencode/src/tool/external-directory.ts`）是权限的几何基础。任何工具碰文件前，先检查路径是否在 project/worktree 边界内：
+
+```ts
+// external-directory.ts:26
+if (containsPath(full, ins)) return false   // 边界内，无需权限
+// 边界外 → 触发 external_directory 权限
+yield* ctx.ask({ permission: "external_directory", patterns: [glob], ... })
+```
+
+`containsPath`（`packages/opencode/src/project/instance-context.ts:18`）：路径在 `ctx.directory` 或 `ctx.worktree` 内 → true。worktree 是 `/` 时跳过（避免匹配一切）。
+
+> 这是 opencode 的「沙箱几何」：**默认只能碰 project 目录**，越界必须用户批准。所有文件类工具（read/edit/write/glob/grep）共用这套检查。
+
+## 自建最小子集
+
+工具系统这块，最小可用版：
+
+1. **统一 Tool 接口**：哪怕只有 3 个工具（read/write/bash），也用一个统一的 `{ id, description, parameters(schema), execute }` 接口。别每个工具硬编码。
+2. **参数校验**：用任意 schema 库（zod / valibot / pydantic）校验入参 + 生成 JSON schema 给模型。
+3. **人机确认**：危险工具（shell/write/delete）执行前弹确认。最小版可以「全部 ask」，不做规则引擎。
+4. **输出截断**：工具输出超长就截断 + 提示。这一条不做的话，一次 `grep` 就能让 context 爆炸。
+
+可以**先不做**的：tree-sitter 静态分析（先全量 ask 用户）、task 子 agent（先单 agent）、托管文件 + 子 agent 读全文（先硬截断丢掉）、按模型过滤工具（先全量给）。这些是体验/规模优化，最小版不需要。
+
+> 但有两条底线：**危险操作必须能拦**（哪怕全 ask）、**输出必须截断**（否则 context 必爆）。
+
+> 上一节 [03 · 上下文管理](./03-context-management) · 下一节 [05 · 多 Provider](./05-multi-provider)

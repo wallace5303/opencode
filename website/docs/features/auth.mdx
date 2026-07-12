@@ -1,0 +1,57 @@
+---
+title: 认证
+description: opencode 认证：oauth/api/wellknown 三类型、auth.json（0o600）存储、OPENCODE_AUTH_CONTENT env override、well-known 远程 config 拉取，以及与 auth 插件的关系。
+sidebarTitle: 认证
+---
+
+opencode 要调各家模型 API，得管各种 credential。`Auth` 服务（`packages/opencode/src/auth/index.ts:50`，`@opencode/Auth`）统一管理所有认证信息。
+
+## 三种类型
+
+`Info`（`auth/index.ts:35`）是三种认证的 union：
+
+| type | 用途 | 字段 |
+|---|---|---|
+| `api` | API key 直填 | `key` |
+| `oauth` | OAuth token | `token` / `refresh` / `expires` |
+| `wellknown` | 远程 well-known 配置 | `url`（拉取 `.well-known/opencode.json`） |
+
+三种类型定义分别在 `auth/index.ts:14`（Oauth）、`:23`（Api）、`:29`（WellKnown）。
+
+## 存储：`auth.json`
+
+- 文件位置：`Global.Path.data/auth.json`（`auth/index.ts:10`）。
+- 权限 `0o600`：`set`（`auth/index.ts:73`）写入时 `fsys.writeJson(file, ..., 0o600)`（`:79`）。
+- 每条 credential 以规范化 key（去尾 `/`）索引。
+
+## env override
+
+`OPENCODE_AUTH_CONTENT` 环境变量（`auth/index.ts:59`）可整体覆盖 `auth.json` 内容——适合 CI/无状态环境注入认证，不落盘。
+
+## 操作
+
+- `all`（`auth/index.ts:58`）：读 `auth.json` 逐条 decode，fallback 到 env；返回全部 credential。
+- `set`（`:73`）：规范化 key（去尾 `/`）后写 0o600。
+- `remove`（`:88`）：删一条，同样 0o600 重写。
+
+## well-known 远程配置
+
+`wellknown` 类型的 credential 指向一个 URL，opencode 拉取其 `.well-known/opencode.json`——里面可声明 provider、auth endpoint、模型 catalog 等。这让一个组织能通过托管一个 URL 来分发配置，用户只需 `opencode auth login <url>`。
+
+## 与 provider 的关系
+
+provider state init（`packages/opencode/src/provider/provider.ts:1313`）时，`auth.json` 的 key 是 auth 来源之一（见 [Providers](./providers)）。合并顺序：plugin config → cfg.provider → env keys → **auth keys** → plugin auth loaders → custom loaders。
+
+## 与 auth 插件的关系
+
+厂商专属 OAuth 流程（如 Codex/Copilot）由内置 auth 插件（见 [插件系统](./plugins)）通过 `auth` hook 实现——它们拿到 OAuth token 后调 `Auth.set` 存进 `auth.json`。`Auth` 服务只管「存与取」，不关心 token 怎么来。
+
+## `opencode auth login`
+
+CLI 子命令 `opencode auth login <provider>` 触发对应流程：
+
+- `api` 类型：交互式输入 key。
+- `oauth` 类型：起本地回调 server 走 OAuth（类似 MCP 的 OAuth，见 [MCP](./mcp)）。
+- `wellknown` 类型：拉远程配置后按其中声明的方式认证。
+
+完成后 credential 落 `auth.json`，下次 provider init 自动取用。

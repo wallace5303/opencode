@@ -1,6 +1,6 @@
 node_modules
 .mintlify
 dist
-build
+/build
 .DS_Store
 *.log

@@ -4,7 +4,7 @@
   "private": true,
   "description": "Mintlify 驱动的 opencode 学习文档站",
   "scripts": {
-    "dev": "mintlify dev",
+    "dev": "mintlify dev --port 3011",
     "build": "mintlify build",
     "preview": "mintlify preview",
     "lint": "mintlify broken-links"
