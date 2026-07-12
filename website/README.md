@@ -29,11 +29,11 @@ opencode-docs/
 
 ```bash
 cd website
-bun install          # 或 npm install
-bun run start        # 开发服务器，默认 http://localhost:3000
-bun run build        # 生产构建，输出到 website/build
-bun run serve        # 本地预览构建产物
-bun run typecheck    # TS 类型检查
+pnpm install         # 安装依赖
+pnpm start           # 开发服务器，默认 http://localhost:3000
+pnpm build           # 生产构建，输出到 website/build
+pnpm serve           # 本地预览构建产物
+pnpm typecheck       # TS 类型检查
 ```
 
 ## 写新文档

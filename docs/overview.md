@@ -3,7 +3,7 @@ title: 项目全景
 sidebar_position: 1
 ---
 
-# 00 · 项目全景
+# 项目全景
 
 ## 一句话定位
 
