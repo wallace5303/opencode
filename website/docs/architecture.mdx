@@ -200,7 +200,7 @@ packages/opencode/src/session/
 - opencode 拥有"**跑什么**"（业务编排、工具实现、provider 注册、消息/compaction/retry 策略）。
 - 想理解持久化与并发语义，读 core；想理解业务流程与工具，读 opencode。
 
-Session V2 的运行时规则（admission/execution 分离、每 turn 一次 `llm.stream`、drain 进程本地、`steer`/`queue` 词汇等）见 `AGENTS.md` 的 "V2 Session Core" 段，术语见 [术语表](./glossary)。深度拆解留待 `04-session-v2-deep-dive`（待写）。
+Session V2 的运行时规则（admission/execution 分离、每 turn 一次 `llm.stream`、drain 进程本地、`steer`/`queue` 词汇等）见 `AGENTS.md` 的 "V2 Session Core" 段，术语见 [术语表](./glossary)。深度拆解见 [Session V2 深度](./session-v2-deep-dive)。
 
 ### 3. 嵌入式 opencode（Embedded OpenCode）
 

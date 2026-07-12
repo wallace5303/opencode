@@ -83,14 +83,8 @@
     "dark": "/logo/dark.svg"
   },
   "navbar": {
-    "links": [
-      { "type": "github", "href": "https://github.com/wallace5303/opencode" },
-      { "label": "opencode 仓库", "href": "https://github.com/sst/opencode" },
-      { "label": "opencode.ai", "href": "https://opencode.ai" }
-    ],
     "primary": {
-      "type": "button",
-      "label": "GitHub",
+      "type": "github",
       "href": "https://github.com/sst/opencode"
     }
   },
