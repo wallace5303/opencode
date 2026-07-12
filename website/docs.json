@@ -38,6 +38,7 @@
           "docs/architecture",
           "docs/glossary",
           "docs/tooling",
+          "docs/debugging",
           "docs/runtime-subsystems",
           "docs/session-v2-deep-dive",
           "docs/clients-and-ui"

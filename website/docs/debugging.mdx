@@ -1,0 +1,286 @@
+---
+title: 调试源码
+description: 调试 opencode 源码的实用指南：日志系统、Bun inspector 断点、opencode debug 子命令、opencode db 数据库检查、HTTP SSE 探针、direct trace、测试调试与 snapshot 检查。
+sidebarTitle: 调试源码
+---
+
+[工程基建](./tooling) 讲了「怎么跑/测/生成」，这篇讲「出了问题怎么查」。opencode 的调试设施相当完整：结构化日志、Bun inspector 断点、一整套 `opencode debug` 子命令、`opencode db` 数据库 shell、HTTP SSE 实时事件流、JSONL direct trace、heap snapshot。按问题类型选工具。
+
+## 三条调试路径
+
+| 问题类型 | 首选工具 |
+|---|---|
+| 「这个流程到底走了哪条路、报了什么错」 | 日志 + direct trace |
+| 「我想在某一行停下来单步看变量」 | Bun inspector 断点 |
+| 「当前 session 的状态/数据是什么」 | `opencode db` + HTTP 探针 |
+
+## 日志系统
+
+opencode 全栈用 Effect 的 logger。日志默认**只写文件**，不进 stderr。
+
+### 日志文件位置
+
+`~/.local/share/opencode/log/opencode.log`（路径来自 `Global.Path.log`，`packages/core/src/global.ts:23`）。
+
+- `fileLogger`（`packages/core/src/observability/logging.ts:49`）用 `Logger.toFile` 追加写，结构化 `key=value` 格式。
+- 每条日志带 `run=<8字符runID>` 标签——**每次启动一个 runID**，能 grep 出单次会话的日志。
+
+> 用 `opencode debug paths`（见下）打印所有路径，确认你机器上的实际日志路径（macOS XDG 解析可能不同）。
+
+### 日志级别
+
+`OPENCODE_LOG_LEVEL`（`logging.ts:56`）：`DEBUG` / `INFO` / `WARN` / `ERROR`，默认 `INFO`。两种设置方式：
+
+```bash
+opencode --log-level DEBUG          # CLI flag（index.ts:57）
+OPENCODE_LOG_LEVEL=DEBUG opencode   # env
+```
+
+### 让日志进 stderr
+
+默认日志只写文件。加 `--print-logs`（`index.ts:53`）或 `OPENCODE_PRINT_LOGS=1`，会**额外**加一个 stderr logger（`logging.ts:68`）——方便在终端实时看：
+
+```bash
+opencode --log-level DEBUG --print-logs
+```
+
+### Direct trace：完整事件流
+
+`OPENCODE_DIRECT_TRACE=1`（`packages/opencode/src/cli/cmd/run/trace.ts:57`）开启 **JSONL 事件 trace**，针对 direct/interactive 模式。写到 `~/.local/share/opencode/log/direct/<timestamp>-<pid>.jsonl`（+ `latest.json` 指针）。
+
+捕获内容：发出的 prompt、收到的 SDK 事件、reducer 输出、footer commit、turn 生命周期标记。这是「完整闭环」级别的 trace——比日志细得多，调试 agent 循环首选。
+
+## 断点调试（Bun inspector）
+
+opencode 跑在 Bun 上，用 Bun 的 inspector 协议（默认 `localhost:6499`）。
+
+### 起 inspector
+
+```bash
+# 等调试器连上再启动（首行断点）
+bun --inspect-wait run --conditions=browser packages/opencode/src/index.ts
+
+# 启动后立即跑，调试器随时连
+bun --inspect-brk run --conditions=browser packages/opencode/src/index.ts serve
+```
+
+连法：Chrome 打开 `chrome://inspect` → Configure → `localhost:6499` → attach；或 VS Code 配 launch.json 指向同一地址。
+
+### TUI worker 的坑
+
+TUI 是**双进程**设计：外层渲染 SolidJS，`new Worker(file)`（`packages/opencode/src/cli/cmd/tui.ts:210`）spawn 一个 worker 线程跑完整 server + services。**Bun 的 `--inspect` 不会自动传到 Worker 线程**——你断在外层，但业务逻辑在 worker 里，断点不触发。
+
+两个解法：
+
+1. **用 `serve` 代替 TUI**：`opencode serve` 跑的是和 worker 同样的 server 逻辑，但在**主进程**里，`bun --inspect` 正常工作。调试 session/provider/tool 逻辑时首选这个。
+2. **TUI external 模式**：`opencode --port 4096` 让 worker 起真 HTTP server（`tui.ts:230`），外层走 HTTP 连。然后你可以同时 curl 端点检查状态。
+
+### `opencode debug wait`：方便附调试器
+
+`opencode debug wait`（`packages/opencode/src/cli/cmd/debug/index.ts`）启动后**睡一天**——纯粹为了让你有时间 attach 调试器再触发操作。调试启动流程、初始化时有用。
+
+### Heap snapshot
+
+`OPENCODE_AUTO_HEAP_SNAPSHOT=1`（`packages/opencode/src/cli/heap.ts`）：RSS 超 2GB 时自动 dump heap snapshot 到 `Global.Path.log/heap-<pid>-<timestamp>.heapsnapshot`。排查内存泄漏用，丢进 Chrome DevTools Memory 面板分析。
+
+## `opencode debug` 子命令
+
+一整套内建调试入口（`packages/opencode/src/cli/cmd/debug/`）：
+
+| 子命令 | 作用 |
+|---|---|
+| `debug paths` | 打印所有 `Global.Path`（data/config/cache/state/log…）——**调试第一步**，确认文件在哪 |
+| `debug config` | 打印解析后的完整配置 |
+| `debug startup` | 启动各阶段耗时（`performance.now()`） |
+| `debug agent <name>` | 某个 agent 的解析详情（system/tools/permission） |
+| `debug snapshot track` / `patch <hash>` / `diff <hash>` | snapshot 检查（见下） |
+| `debug file search/read/list` | 文件系统调试 |
+| `debug lsp` | LSP server 状态 |
+| `debug skill` | skill 发现结果 |
+| `debug ripgrep` | ripgrep 调试 |
+| `debug v2` | catalog + 内置插件信息 |
+| `debug scrap` | 列出所有已知 project |
+| `debug wait` | 睡一天，等调试器 attach |
+
+## 数据库检查
+
+opencode 用 SQLite（Drizzle ORM）。DB 文件默认 `~/.local/share/opencode/opencode.db`（`packages/core/src/database/database.ts:43`）。
+
+### `opencode db` 命令
+
+`packages/opencode/src/cli/cmd/db.ts:8`：
+
+```bash
+opencode db                    # 进交互式 sqlite3 shell
+opencode db path               # 打印 DB 文件路径
+opencode db "SELECT * FROM session LIMIT 5"           # 直接跑 SQL
+opencode db "SELECT * FROM message" --format json     # JSON 输出
+opencode db "..." --format tsv                        # TSV 输出
+```
+
+> 这是查 session 状态最直接的方式。常用表（见 [存储](./internals/storage-db)）：`session`、`message`、`session_message`、`session_input`、`session_context_epoch`、`project`。
+
+### 自定义 DB 路径
+
+- `OPENCODE_DB=<path>`：绝对路径 / 相对 data dir 的路径 / `:memory:`（`database.ts:47`）。
+- `OPENCODE_DISABLE_CHANNEL_DB=1`：强制用 `opencode.db`，不分 channel。
+- 非 release channel 默认用 `opencode-<channel>.db`。
+
+### Drizzle Studio
+
+`packages/core/drizzle.config.ts` 配了 schema 来源。装 `drizzle-kit` 后改 `dbCredentials.url` 指向你的 DB 路径，`drizzle-kit studio` 起 GUI 看表结构+数据。
+
+## HTTP 服务器探针
+
+`opencode serve`（默认端口 4096，`packages/opencode/src/server/server.ts:117`）起 HTTP server 后，能用 curl 实时查状态。
+
+### 鉴权
+
+设了 `OPENCODE_SERVER_PASSWORD`（`packages/opencode/src/server/auth.ts:17`）就要 Basic Auth：`Authorization: Basic base64(opencode:<password>)>`。调试时本地通常不设，直接裸连。
+
+### 实用端点
+
+| 端点 | 作用 |
+|---|---|
+| `GET /global/health` | `{healthy, version}`——确认 server 活着 |
+| `GET /doc` | 完整 OpenAPI JSON（懒生成+缓存，`server.ts:188`） |
+| `GET /session` | 列出所有 session |
+| `GET /session/:id/message` | 某 session 的消息 |
+| `GET /session/status` | 所有 session 的状态 map |
+| `GET /instance/path` | `{home, state, config, worktree, directory}` |
+| `GET /global/config` | 全局配置 |
+
+### SSE 实时事件流
+
+`GET /event`（实例级，需 `x-opencode-directory` header）或 `GET /global/event`（全局，`packages/opencode/src/server/routes/instance/httpapi/groups/event.ts:7`）返回 `text/event-stream`。**这是实时看 agent 在干啥的最佳工具**：
+
+```bash
+# 全局事件流（所有 project/workspace）
+curl -N http://localhost:4096/global/event
+
+# 实例级（带目录 header）
+curl -N -H "x-opencode-directory: /your/project" http://localhost:4096/event
+```
+
+`-N` 关闭 curl 缓冲，事件边来边打。你会看到 `PromptAdmitted`、`Step.Started`、`text-delta`、`tool-call`、`tool-result`、`Step.Ended`、`Compaction.*`、`ContextUpdated` 等事件实时刷出来——等于在协议层「看 agent 思考」。
+
+> 这些事件就是 [一次 Provider Turn](./internals/llm-stream-loop) 里 `publish(event)` 发的那些，前端/TUI 也是靠它们实时渲染。
+
+## 事件总线
+
+内部 `GlobalBus`（`packages/opencode/src/bus/global.ts:1`）是个 typed `EventEmitter`，承载 `GlobalEvent`。SSE handler、worker RPC 转发、V2 event bridge 都订阅它。
+
+没有内建 CLI 直接 tap GlobalBus——观察事件的官方途径就是上面的 SSE 端点或 `OPENCODE_DIRECT_TRACE=1`。要自己 tap，在代码里 `GlobalBus.on("event", e => ...)`。
+
+## 测试调试
+
+### 跑单个测试
+
+```bash
+cd packages/opencode
+bun test path/to/file.test.ts                 # 单文件
+bun test -t "name pattern"                     # 按名匹配
+bun test --timeout 30000 --only-failures       # 只跑失败的（默认 test 脚本）
+bun test -b                                    # 首个失败即停
+```
+
+> ⚠️ 测试**不能在根目录跑**（根 `test` 脚本 exit 1 守卫）。必须 `cd packages/xxx`。
+
+### 断点调试测试
+
+```bash
+bun --inspect-wait test path/to/file.test.ts
+```
+
+attach DevTools 后在测试代码或被测代码下断点。
+
+### 测试隔离
+
+`packages/opencode/test/preload.ts` 在所有测试前跑：隔离 XDG 目录、`OPENCODE_DB=:memory:`、清空 provider key、设 `OPENCODE_TEST_HOME`、初始化 projector。所以测试不会污染你本机的 `~/.local/share/opencode`。
+
+### HttpApi 三模式
+
+`bun run test:httpapi`（`packages/opencode/test/server/httpapi-exercise/routing.ts:32`）跑三遍：
+
+| 模式 | 做什么 |
+|---|---|
+| `coverage` | 检查每个 OpenAPI 路由都有测试场景（不发真请求） |
+| `auth` | 测鉴权行为（密码必需/可选、对错凭证） |
+| `effect` | 起真 server + 真 DB + 真 Effect runtime，跑完整场景 |
+
+加 `--include <pattern>` 跑子集，`--trace` 出 trace，`--scenario-timeout` 控超时。改了 HttpApi 契约后用 `effect` 模式回归。
+
+## Snapshot 检查
+
+session revert 与每步文件 diff 靠 git-based snapshot（见 [Snapshot 与 Revert](./internals/snapshot-revert)）。snapshot git-dir 在 `~/.local/share/opencode/snapshot/<projectID>/<worktreeHash>`（`packages/opencode/src/snapshot/index.ts:71`）。
+
+### 用 `opencode debug snapshot`
+
+```bash
+opencode debug snapshot track          # 建当前快照，打印 tree hash
+opencode debug snapshot patch <hash>   # 列出该 hash 之后改了哪些文件
+opencode debug snapshot diff <hash>    # 完整 diff
+```
+
+### 手动用 git
+
+```bash
+# 列快照
+git --git-dir=~/.local/share/opencode/snapshot/<pid>/<hash> log --oneline
+# 看某 tree 之后的文件变更
+git --git-dir=<gitdir> --work-tree=<worktree> diff --cached --name-only <tree-hash> -- .
+```
+
+snapshot 用独立 `--git-dir`/`--work-tree`，不碰你项目的 `.git`，靠 alternates 链接主 repo 的对象库省空间。
+
+## 常见调试场景
+
+### 跟一次 provider turn 的全流程
+
+1. `opencode serve --log-level DEBUG --print-logs` 起 server。
+2. 另开终端 `curl -N -H "x-opencode-directory: /your/project" http://localhost:4096/event`。
+3. 通过 `POST /session/:id/prompt`（或 TUI）发一条 prompt。
+4. SSE 流里看 `PromptAdmitted → Step.Started → text-delta… → tool-call → tool-result → Step.Ended`。
+5. 想看代码层：在 `packages/core/src/session/runner/llm.ts:168`（`runTurnAttempt`）下断点，用 `bun --inspect-wait` 起 serve。
+
+### 查 session 当前状态
+
+```bash
+opencode db "SELECT id, model, cost_total, time_updated FROM session ORDER BY time_updated DESC LIMIT 5"
+opencode db "SELECT seq, type, substr(content,1,80) FROM session_message WHERE session_id='<id>' ORDER BY seq"
+opencode db "SELECT admitted_seq, promoted_seq, delivery FROM session_input WHERE session_id='<id>'"
+```
+
+`admitted_seq` 有值但 `promoted_seq` 为空 = 这条 input 还在 inbox 没被消化（见 [会话生命周期](./internals/session-lifecycle)）。
+
+### 看为什么权限被拒/被 ask
+
+权限判定在 `packages/opencode/src/permission/index.ts`（见 [工具注册与权限](./internals/tool-registry-permissions)）。`--log-level DEBUG` 会打出规则匹配过程；或断点 `evaluate`（`:28`）/`ask`（`:67`）看 ruleset。
+
+### 看 compaction / overflow 自愈
+
+`OPENCODE_DIRECT_TRACE=1` 跑长对话，trace JSONL 里能看到 `Compaction.Started`/`Ended`、overflow 后的 turn 重启标记（见 [上下文管理](./build/03-context-management)）。
+
+## 环境变量速查
+
+| 变量 | 作用 | 来源 |
+|---|---|---|
+| `OPENCODE_LOG_LEVEL` | 日志级别 DEBUG/INFO/WARN/ERROR | `logging.ts:56` |
+| `OPENCODE_PRINT_LOGS` | `1` 时日志额外进 stderr | `logging.ts:68` |
+| `OPENCODE_DIRECT_TRACE` | `1` 开 JSONL 事件 trace | `cmd/run/trace.ts:57` |
+| `OPENCODE_AUTO_HEAP_SNAPSHOT` | `1` 时 RSS>2GB 自动 dump heap | `cli/heap.ts` |
+| `OPENCODE_DB` | DB 路径 / `:memory:` | `database.ts:47` |
+| `OPENCODE_DISABLE_CHANNEL_DB` | `1` 强制 `opencode.db` | `database.ts` |
+| `OPENCODE_SERVER_PASSWORD` | serve/web 的 Basic Auth 密码 | `server/auth.ts:17` |
+| `OPENCODE_PURE` | `1` 禁用外部插件 | `core/src/flag/flag.ts:66` |
+| `OPENCODE_TEST_HOME` | 测试用 home 目录 | `core/src/global.ts:19` |
+| `OPENCODE_WORKER_PATH` | 覆盖 TUI worker 脚本路径 | `cmd/tui.ts:53` |
+| `OPENCODE_SHOW_TTFD` | `1` 显示 time-to-first-display | `core/src/flag/flag.ts:27` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 开 OTLP 日志/trace 上报 | `core/src/observability/otlp.ts:7` |
+
+## 进一步阅读
+
+- 跑/测/生成：[工程基建](./tooling)
+- session 数据流：[会话生命周期](./internals/session-lifecycle)、[一次 Provider Turn](./internals/llm-stream-loop)
+- 存储表结构：[存储与 #db](./internals/storage-db)
+- snapshot 机制：[Snapshot 与 Revert](./internals/snapshot-revert)
