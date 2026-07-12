@@ -1,106 +1,86 @@
 # CLAUDE.md
 
-本文件为 Claude Code（claude.ai/code）在本仓库中处理代码时提供指导。
+本文件为 Claude Code（claude.ai/code）在本仓库中处理内容时提供指导。
 
 ## 仓库状态
 
-这是 **opencode** monorepo（Bun + TypeScript，Turborepo workspaces）。`opencode-docs` 目录名只是本地检出路径；仓库根目录是 opencode 项目。默认分支是 `dev` —— 本地可能不存在 `main` ref；做 diff 时请用 `dev` 或 `origin/dev`。需要 Bun 1.3+。
+这是 **opencode-docs** —— 一个**只写文档**的仓库，不包含 opencode 源码。被文档化的对象是上游 [sst/opencode](https://github.com/sst/opencode) monorepo（Bun + TypeScript）；本仓库的产物是一个基于 **Mintlify** 的文档站，位于 `website/`。
+
+- 默认分支：`dev`。做 diff 用 `dev` 或 `origin/dev`（本地可能没有 `main` ref）。
+- 文档内容基于 opencode `v1.17.13` 前后的代码状态；上游重构后，文中引用的 `packages/...:行号` 路径可能漂移。
+
+## 目录结构
+
+```
+opencode-docs/
+├── CLAUDE.md
+├── README.md
+└── website/                 # Mintlify 项目根（docs.json 所在目录，命令在这里跑）
+    ├── docs.json            # 站点配置 + 导航（groups → pages，路径 docs/...）
+    ├── package.json         # mintlify CLI（pnpm）
+    ├── pnpm-lock.yaml / pnpm-workspace.yaml
+    ├── favicon.svg
+    ├── logo/                # /logo/light.svg、/logo/dark.svg
+    └── docs/                # 文档内容（.mdx）
+        ├── introduction.mdx  + 8 篇根文档（overview / architecture / glossary / tooling / runtime-subsystems / session-v2-deep-dive / clients-and-ui / learning-path）
+        ├── features/         # 功能文档（8 篇）
+        └── internals/        # 实现原理（8 篇）
+```
+
+> **Mintlify 约束（重要）**：Mintlify 把 `docs.json` 所在目录作为项目根，**内容必须放在根之下**。它没有 Docusaurus 那种 `docs.path: "../docs"` 指向外层目录的配置。所以文档内容在 `website/docs/`，而不是与 `website/` 平级。不要尝试把 `docs/` 移成 `website/` 的兄弟目录——实测会导致 dev 服务器把 `../` 规范化掉、所有页面 404，或符号链接方案抛 `RangeError`。
 
 ## 命令
 
-除非特别说明，均在仓库根目录运行。测试和类型检查必须在 package 目录下运行，绝不在根目录运行（根目录的 `bun test` 会因 `do-not-run-tests-from-root` 守卫而以退出码 1 退出）。
+均在 `website/` 目录下运行（`docs.json` 在那里）：
 
 ```bash
-bun install                      # 安装依赖（postinstall 会运行 packages/core 的 fix-node-pty）
-bun dev                          # 针对 packages/opencode 运行 opencode TUI（即 `opencode` 二进制的本地等价物）
-bun dev <directory>              # 针对指定目录运行 TUI（用 `bun dev .` 表示仓库根目录）
-bun dev serve [--port 8080]      # headless API 服务器（默认端口 4096）
-bun dev web                      # 服务器 + web UI
-bun run --cwd packages/app dev   # web UI 开发（先启动 `bun dev serve`）
-bun --cwd packages/desktop dev   # Electron 桌面应用
-bun lint                         # oxlint（根目录）
-bun typecheck                    # 跨 packages 的 turbo 类型检查
+cd website
+pnpm install         # 安装 mintlify CLI（pnpm 11+）
+pnpm dev             # 开发服务器，默认 http://localhost:3000
+pnpm build           # 生产构建
+pnpm lint            # 失效链接检查（mintlify broken-links）
 ```
 
-按 package 运行（例如 `packages/opencode`）：
+> 也可不装依赖直接 `npx mintlify@latest dev`。`mintlify dev` / `build` / `broken-links` 都必须从 `website/`（即 `docs.json` 所在目录）运行。
 
-```bash
-bun typecheck                    # tsgo --noEmit — 永远用这个，不要用原始 tsc
-bun test --timeout 30000 --only-failures        # 完整测试套件
-bun test path/to/file.test.ts                    # 单个测试文件
-bun test -t "name pattern"                       # 按名称运行单个测试
-bun run test:httpapi                             # 练习公开的 HttpApi（coverage/auth/effect 模式）
-bun run build                                    # 通过 script/build.ts 构建
-./packages/opencode/script/build.ts --single     # 编译独立可执行文件 → packages/opencode/dist/opencode-<platform>/bin/opencode
-```
+## Mintlify 写作规范
 
-其他开发服务器：`dev:console`、`dev:stats`、`dev:storybook`（见根目录 `package.json`）。
+编辑 `website/docs/` 下的 `.mdx` 时遵循：
 
-## 代码生成（不要手动编辑）
+- **frontmatter**：`title` + `description` 必填；可选 `sidebarTitle`（侧边栏短名）。**不要**写 `sidebar_position`——顺序由 `docs.json` 的 `navigation` 控制。
+- **正文不要 H1**：frontmatter 的 `title` 会渲染为页面主标题，正文开头不要再写 `# 标题`（会重复）。
+- **Tabs**：用 Mintlify 内置 `<Tabs>` / `<Tab title="…">`，**无需 import**。不要用 Docusaurus 的 `import Tabs from '@theme/Tabs'` / `<TabItem>`。
+- **站内链接**：去掉 `.md` 扩展名（`./architecture`，不是 `./architecture.md`）；锚点 `#xxx` 保留。
+- **文件后缀**：统一 `.mdx`（含 JSX 组件的页面必须，纯文本也兼容）。
+- **图表**：` ```mermaid ` 代码块原生渲染，无需插件。
+- **静态资源**：以 `/` 开头的路径从 `website/` 根解析（如 `/favicon.svg`、`/logo/light.svg`），放在 `website/` 根下而非子目录。
+- **新增页面**：在 `website/docs/` 建好 `.mdx` 后，必须把路径（相对 `website/`，如 `docs/features/foo`）加进 `website/docs.json` 的某个 `navigation.groups[].pages` 数组，否则不会被导航收录。
 
-- `packages/client/src/generated` 和 `src/generated-effect` 由公开的 Protocol/Server `HttpApi` 生成。修改其中任一后，从 `packages/client` 运行 `bun run generate`。
-- 旧版 JS SDK 通过 `./packages/sdk/js/script/build.ts` 重新生成。
+### 导航分组（`docs.json`）
 
-## 架构
+- **开始**：introduction、overview、learning-path
+- **架构与原理**：architecture、glossary、tooling、runtime-subsystems、session-v2-deep-dive、clients-and-ui
+- **功能**（`docs/features/`）：cli-commands、providers、tools、agents-and-skills、sessions、config、multi-platform、docs-site
+- **实现原理**（`docs/internals/`）：dependency-layering、session-lifecycle、llm-stream-loop、tool-registry-permissions、system-context-algebra、httpapi-codegen、storage-db、embedded-opencode
 
-### 依赖方向（强制执行，重要）
+## 文档主题：opencode（被文档化的对象）
 
-运行时依赖流向：**Schema → Core 和 Protocol → Server**。**Client** 运行时代码可以依赖 Schema 和 Protocol，但**绝不**依赖 Core 或 Server。`sdk-next` 组合 Client + Core + Server。不要引入违反此分层的 import。
+写文档时需要准确描述 opencode，以下是关键背景（这些规则用来**校对文档内容**，不是本仓库要执行的命令）：
 
-### 关键 packages（`packages/`）
-
-- `opencode` — 核心业务逻辑与服务器；CLI/TUI 入口。`src/` 的子目录映射到各个领域：`session`、`provider`、`tool`、`agent`、`server`、`config`、`auth`、`lsp`、`mcp`、`plugin`、`permission`、`project`、`session`、`worktree`、`cli/cmd`（CLI 子命令）、`cli/cmd/tui`（TUI，SolidJS + opentui）。
-- `app` — 共享的 web UI 组件（SolidJS）。
-- `desktop` — 包装 `packages/app` 的 Electron 应用。
-- `tui`、`ui`、`web` — 额外的 SolidJS UI 界面。
-- `core` — 共享的核心原语（也提供 `fix-node-pty` postinstall）。
-- `schema`、`protocol` — 类型/契约定义（依赖图的底层）。
-- `server` — HTTP 服务器实现。
-- `client`、`sdk`、`sdk-next` — 生成/组合的客户端库。
-- `plugin` — 发布的 `@opencode-ai/plugin` 的源码。
-- `docs` — 文档站点（MDX + `docs.json`；`openapi.json` 是发布的 API 规范）。
-
-### 存储 / DB
-
-`packages/opencode` 使用 `#db` import 别名，通过 package `imports` 条件解析为 `src/storage/db.bun.ts`（Bun）或 `db.node.ts`（Node）。Drizzle schema 使用 **snake_case** 字段名，因此列名无需重新定义为字符串。
-
-### V2 Session 核心
-
-Session 运行时是持久化的，准入（admission）与执行（execution）是分离的。改动 session 代码时：
-
-- `SessionV2.prompt(...)` 准入一行持久的 `session_input` 记录，然后除非 `resume: false`，否则调度建议性的 `SessionExecution.wake(sessionID)`。序列化的 runner 在安全边界将准入的输入提升为可见的用户消息。
-- `SessionExecution` 是进程级全局且基于 Session ID 的 —— 任何层都不应接收 Session ID；placement 仅在 drain 时通过 `SessionStore` + `LocationServiceMap` 发现。中断针对活动的进程本地所有权链；空闲/缺失时为 no-op。
-- 每个 provider turn 一次显式的 `llm.stream(request)` 调用；在持久化续接前重新加载投影的历史。**不要**桥接旧版 `SessionPrompt.loop(...)` 或委托给内存中的 tool loop。
-- `SessionRunCoordinator` 合并同一 Session 的 resume 并合并 prompt 唤醒；不同 Session 并发运行。在集群化出现之前，drain 是进程本地的；drain 没有持久化身份或 transcript 边界。
-- 投递词汇是显式的：`steer`（默认，在下一个安全边界提升）、`queue`（挂起直到 Session 即将空闲）。提升任何新的用户输入会重置 agent 的 provider-turn 配额；一个 steer 批次只重置一次。
-- System Context 的代数/注册表/内置项位于 `src/system-context`；Context Source 生产者与其观察的领域在一起；Session History 选择和 Context Epoch 持久化由 Session 拥有。
-
-关于规范词汇（System Context、Context Source、Context Epoch、Admitted Prompt、Prompt Promotion、Provider Turn、Session Drain 等）见 `CONTEXT.md` —— 使用这些术语，而不是 "system prompt" 之类的非正式说法。
+- **依赖方向铁律**：运行时依赖 `Schema → Core/Protocol → Server`；Client 只依赖 Schema/Protocol，**绝不**依赖 Core/Server；`sdk-next` 组合 Client + Core + Server。
+- **Session V2 内核位置**：在 `packages/core/src/session*`，**不在** `packages/opencode/src/session`（后者是业务编排层）。这是初学者最易踩的坑，文档里反复强调。
+- **规范术语**：使用上游 `CONTEXT.md` 的规范词——System Context、Context Source、Context Epoch、Admitted Prompt、Prompt Promotion、Provider Turn、Session Drain 等；**避免**"系统提示词"之类口语说法。完整对照见 `website/docs/glossary.mdx`。
+- **源码引用**：统一写成 `packages/xxx/src/yyy.ts:行号` 形式，方便读者跳转。
 
 ## 约定
 
 ### 分支与提交
 
-- 默认分支：`dev`。分支名：≤3 个连字符分隔的单词，无斜杠，无 `feat/`/`fix:` 前缀（如 `session-recovery`）。
-- 提交和 PR 标题均使用约定式提交（Conventional commits）：`type(scope): summary`。类型：`feat`、`fix`、`docs`、`chore`、`refactor`、`test`。Scope = 受影响的 package（`core`、`opencode`、`tui`、`app`、`desktop`、`sdk`、`plugin`、…）。示例：`fix(tui): simplify thinking toggle styling`、`docs: update contributing guide`。
+- 默认分支：`dev`。分支名：≤3 个连字符分隔的单词，无斜杠，无 `feat/`/`fix:` 前缀（如 `session-v2-notes`）。
+- 约定式提交：`type(scope): summary`。类型：`docs`、`chore`、`fix`、`refactor`。scope 用 `docs`（文档内容）或 `engine`（站点配置/工具/依赖）。示例：`docs: expand session-lifecycle mermaid`、`chore(engine): bump mintlify`、`fix(docs): broken cross-link in overview`。
 
-### 风格（来自 AGENTS.md —— 这些是强制执行的偏好，不是通用建议）
+### 风格
 
-- 禁止 alias import（`import { foo as bar }`），禁止 star import。若需要命名空间值，按名 import 模块自身导出的命名空间，例如 `import { Project } from "@opencode-ai/core/project"` 然后用 `Project.ID`。
-- 在启动敏感路径中优先用动态 import；在最窄的、需要绑定作用域顶部解构绑定（不要内联 `await import(...).then(...)` 链）。分支特定的 import 保持在分支内部。
-- 依赖类型推断；除非为导出或清晰性所需，否则避免显式注解/接口。避免 `any`。
-- 内联一次性使用的值；不要预先抽取 helper。仅当 helper 命名了一个真实概念时，才将其保留在主 export 之下。
-- 优先用 `const` + 三元/提前返回，而非 `let`/重新赋值。避免 `else`。
-- 尽可能避免 `try`/`catch`；优先 `.catch(...)`。不要从只做同步解析/校验的 helper 返回 `Effect`。
-- 避免不必要的解构；用点表示法保留上下文。
-- 优先用函数式数组方法（`flatMap`/`filter`/`map`）而非 `for` 循环；在 `filter` 上用类型守卫以保持推断。
-- 合适时使用 Bun API（`Bun.file()` 等）。
-- 在 Effect generator 中，调用方法前将 service 绑定到命名变量 —— 不要嵌套 `yield* (yield* Foo.Service).bar()`。
-- 优先用 Effect schema helper（`Schema.UnknownFromJsonString`、`Schema.decodeUnknownOption`），而非手动 `JSON.parse` 包在 `Effect.try` 里。
-- 在 `src/config` 中，添加配置模块时遵循自导出模式（`export * as ConfigAgent from "./agent"`）。
-- Prettier：`semi: false`、`printWidth: 120`。
-
-### 测试
-
-- 避免 mock；除非别无选择，否则不要碰 `globalThis.*`。测试真实实现 —— 不要把逻辑复制进测试。
-- 测试从 package 目录（如 `packages/opencode`）运行，绝不在根目录。
+- 中文内容；措辞与周围段落保持一致。
+- Markdown 保持简洁；本仓库未配 Prettier，无需手动格式化。
+- 改动 `.mdx` 后，建议跑 `pnpm lint`（在 `website/`）确认无失效链接。
