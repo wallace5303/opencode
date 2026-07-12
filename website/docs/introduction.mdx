@@ -1,28 +1,42 @@
 ---
 title: opencode 学习文档
-description: opencode 学习文档总览：读什么、怎么读、仓库布局与导航。
+description: opencode 学习文档总览：两条阅读线（参考线 + build 线）、怎么读、仓库布局与约定。
 ---
-这套文档用来拆解 [**opencode**](https://github.com/sst/opencode) —— 一个开源的 AI 编码 agent。它的本体在相邻的 `../opencode` 目录（Bun + TypeScript monorepo）。本仓库（`opencode-docs`）只存放学习笔记与一个 Docusaurus 文档站。
 
-## 这套文档讲什么
+这套文档用来拆解 [**opencode**](https://github.com/sst/opencode) —— 一个开源的 AI 编码 agent。它的本体在相邻的 `../opencode` 目录（Bun + TypeScript + Effect 4.0 monorepo）。本仓库（`opencode-docs`）只存放学习笔记与一个 [Mintlify](https://mintlify.com/) 文档站。
 
-- **项目全景**：opencode 是什么、技术栈、monorepo 地图 → [项目全景](./overview)
-- **架构分层**：Schema → Core/Protocol → Server 的依赖铁律，包关系图 → [架构分层](./architecture)
-- **术语表**：基于 `CONTEXT.md` 的规范化术语，中英对照 → [术语表](./glossary)
+## 两条阅读线
 
-后续会补齐工程基建、运行时子系统、Session V2 深度、多端与 SDK 等章节。
+文档分两条互补的线，按你的目标选：
+
+- **参考线**（[功能](./features/cli-commands)、[实现原理](./internals/dependency-layering)）：回答「opencode 这块代码长什么样」——逐子系统拆解，附 `file:line` 源码引用，便于跳转核对。
+- **build 线**（[自己造一个](./build/introduction)）：回答「如果我自己造一个，每步该怎么设计、能砍掉什么」——把各功能串成从零复刻一个 coding agent 的可复刻指南，每篇含「自建最小子集」。
+
+想读懂 opencode 本身 → 参考线；想学会造同类项目 → 先走 build 线建全局观，再按需钻参考线。
 
 ## 怎么读
 
-如果你是第一次接触这个项目：
+第一次接触：
 
-1. 先读 [项目全景](./overview)，建立整体印象；
-2. 再读 [架构分层](./architecture)，记住**依赖方向铁律**——它是理解一切的骨架；
-3. 遇到不熟悉的词，查 [术语表](./glossary)；
-4. 想动手时，回到 `../opencode` 按 `packages/opencode/src/cli/cmd/` 的命令入口顺藤摸瓜。
+1. [项目全景](./overview) 建立整体印象；
+2. [架构分层](./architecture) 记住**依赖方向铁律**（Schema → Core/Protocol → Server；Client 绝不依赖 Core/Server）——它是理解一切的骨架；
+3. 遇到不熟悉的词查 [术语表](./glossary)。
+
+想动手造一个：
+
+1. 从 [自己造一个 · 导读](./build/introduction) 进 build 线，按 01–08 顺序读；
+2. build 线里提到「详见 internals/xxx」时，再跳进参考线深挖。
+
+## 站点结构
+
+- **开始**：introduction、overview、learning-path
+- **自己造一个**：build 线 9 篇（导读 + 01 Agent 循环 → 08 总装）
+- **架构与原理**：architecture、glossary、tooling、runtime-subsystems、session-v2-deep-dive、clients-and-ui
+- **功能**：cli-commands、providers、tools、agents-and-skills、sessions、config、multi-platform、mcp、plugins、auth、docs-site
+- **实现原理**：dependency-layering、session-lifecycle、llm-stream-loop、tool-registry-permissions、system-context-algebra、httpapi-codegen、storage-db、snapshot-revert、project-worktree-share、embedded-opencode
 
 ## 约定
 
-- 文档里引用源码一律写成 `packages/xxx/src/yyy.ts:行号` 的形式，可点击跳转。
-- 术语严格使用 `CONTEXT.md` 的规范词（如 **System Context**、**Provider Turn**、**Session Drain**），不使用"系统提示词"这类口语化说法。
-- 文档基于 opencode `v1.17.13` 前后的代码状态，若代码后续重构，引用路径可能漂移。
+- 引用源码一律 `packages/xxx/src/yyy.ts:行号`，相对 opencode 仓库根。
+- 术语严格用 `CONTEXT.md` 规范词（如 **System Context**、**Provider Turn**、**Session Drain**、**Context Epoch**），不用「系统提示词」这类口语化说法。
+- 文档基于 opencode `v1.17.13` 前后的代码状态，上游重构后 `file:line` 可能漂移。

@@ -9,7 +9,7 @@ opencode 有**两套**文档表面，技术栈不同、用途不同：
 | 主文档站（opencode.ai/docs） | `packages/web` | Astro + Starlight + `toolbeam-docs-theme`，部署到 Cloudflare | 面向用户的产品文档，多语言 |
 | SDK 参考 | `packages/docs` | Mintlify | SDK / OpenAPI 参考 |
 
-> ⚠️ 注意：项目里**没有 `website/` 目录，也没有用 docusaurus**。本仓库（`opencode-docs`）的 `website/` 是我们新建的 Docusaurus 学习站，不属于 opencode 上游。
+> ⚠️ 注意：opencode 上游**没有 `website/` 目录**。本仓库（`opencode-docs`）的 `website/` 是我们新建的 Mintlify 学习站，不属于 opencode 上游。
 
 ## 主文档站：`packages/web`
 
@@ -104,9 +104,9 @@ packages/docs/
 | 仓库 | 文档站 | 用途 |
 |---|---|---|
 | `../opencode`（上游） | `packages/web`（Starlight）+ `packages/docs`（Mintlify） | 面向用户的官方文档 |
-| `opencode-docs`（本仓库） | `website/`（Docusaurus） | 学习笔记，用 Docusaurus 重新组织对 opencode 的理解 |
+| `opencode-docs`（本仓库） | `website/`（Mintlify） | 学习笔记，用 Mintlify 重新组织对 opencode 的理解 |
 
-本仓库的 Docusaurus 站点内容在 `docs/`（即你现在读的这套），不依赖上游两套站点，但引用上游代码路径。
+本仓库的 Mintlify 站点内容在 `website/docs/`（即你现在读的这套），不依赖上游两套站点，但引用上游代码路径。
 
 ## 相关文档
 
