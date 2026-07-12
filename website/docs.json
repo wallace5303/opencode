@@ -39,6 +39,7 @@
           "docs/glossary",
           "docs/tooling",
           "docs/debugging",
+          "docs/publishing",
           "docs/runtime-subsystems",
           "docs/session-v2-deep-dive",
           "docs/clients-and-ui"
@@ -81,19 +82,17 @@
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
-  "topbarLinks": [
-    {
-      "name": "opencode 仓库",
-      "url": "https://github.com/sst/opencode"
-    },
-    {
-      "name": "opencode.ai",
-      "url": "https://opencode.ai"
+  "navbar": {
+    "links": [
+      { "type": "github", "href": "https://github.com/wallace5303/opencode" },
+      { "label": "opencode 仓库", "href": "https://github.com/sst/opencode" },
+      { "label": "opencode.ai", "href": "https://opencode.ai" }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "GitHub",
+      "href": "https://github.com/sst/opencode"
     }
-  ],
-  "topbarCta": {
-    "name": "GitHub",
-    "url": "https://github.com/sst/opencode"
   },
   "search": {
     "prompt": "搜索文档…"
