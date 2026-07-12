@@ -1,0 +1,6 @@
+node_modules
+.mintlify
+dist
+build
+.DS_Store
+*.log

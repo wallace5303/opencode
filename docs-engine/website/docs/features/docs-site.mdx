@@ -1,0 +1,115 @@
+---
+title: 文档站
+description: opencode 两套文档表面的技术栈与用途对比。
+---
+opencode 有**两套**文档表面，技术栈不同、用途不同：
+
+| 表面 | 包 | 技术栈 | 用途 |
+|---|---|---|---|
+| 主文档站（opencode.ai/docs） | `packages/web` | Astro + Starlight + `toolbeam-docs-theme`，部署到 Cloudflare | 面向用户的产品文档，多语言 |
+| SDK 参考 | `packages/docs` | Mintlify | SDK / OpenAPI 参考 |
+
+> ⚠️ 注意：项目里**没有 `website/` 目录，也没有用 docusaurus**。本仓库（`opencode-docs`）的 `website/` 是我们新建的 Docusaurus 学习站，不属于 opencode 上游。
+
+## 主文档站：`packages/web`
+
+### 技术栈
+
+配置在 `packages/web/astro.config.mjs`：
+
+- **Astro** + `@astrojs/starlight`（Starlight 是 Astro 的文档主题）
+- `toolbeam-docs-theme`（自定义主题层）
+- `@astrojs/solid-js`（SolidJS 组件 island）
+- `@astrojs/cloudflare` adapter，部署到 Cloudflare
+- `output: "server"`，`base: "/docs"`
+- rehype 插件：`rehypeHeadingIds` + `rehypeAutolinkHeadings`（标题自动锚点）
+
+### 内容结构
+
+```
+packages/web/src/content/
+├── docs/                # 文档内容（MDX）
+│   ├── index.mdx        # 首页
+│   ├── acp.mdx  agents.mdx  cli.mdx  commands.mdx  config.mdx
+│   ├── custom-tools.mdx  ecosystem.mdx  enterprise.mdx  formatters.mdx
+│   ├── github.mdx  gitlab.mdx  go.mdx  ide.mdx  keybinds.mdx  lsp.mdx
+│   ├── mcp-servers.mdx  models.mdx  network.mdx  permissions.mdx  plugins.mdx
+│   ├── policies.mdx  providers.mdx  references.mdx  rules.mdx  sdk.mdx
+│   ├── server.mdx  share.mdx  skills.mdx  themes.mdx  tools.mdx
+│   ├── troubleshooting.mdx  tui.mdx  web.mdx  windows-wsl.mdx  zen.mdx
+│   └── <locale>/        # 18 个语言子目录
+└── i18n/                # UI 字符串翻译
+    ├── en.json  zh-CN.json  zh-TW.json  ja.json  ko.json
+    ├── ar.json  bs.json  da.json  de.json  es.json  fr.json
+    ├── it.json  nb.json  pl.json  pt-BR.json  ru.json
+    ├── th.json  tr.json  ...
+```
+
+英文文档在根目录，18 个翻译版本在各自 locale 子目录（`ar/` `bs/` `da/` `de/` `es/` `fr/` `it/` `ja/` `ko/` `nb/` `pl/` `pt-br/` `ru/` `th/` `tr/` `zh-cn/` `zh-tw/`）。
+
+### 本地开发
+
+```bash
+cd ../opencode
+bun run --cwd packages/app dev   # 注意：web 依赖 app 的构建产物
+# 或直接
+cd packages/web && bun dev
+```
+
+### CI 自动化（两套工作流）
+
+**`docs-update.yml`** —— 文档自动更新：
+
+1. Checkout + Setup Bun
+2. 取最近 commits
+3. 用 **opencode agent**（`agent: docs`）检查新功能是否已记录在 `packages/web/src/content/docs/*`
+4. 自动更新相关文档文件
+
+**`docs-locale-sync.yml`** —— 多语言同步：
+
+1. 计算变更的英文文档
+2. 安装 opencode
+3. 用 opencode 把变更的英文文档**翻译**到各 locale
+4. 提交并推送 locale 更新
+
+> 这是 opencode "自己给自己写文档"的闭环：agent 改了功能 → agent 更新英文文档 → agent 翻译成 18 种语言。
+
+## SDK 参考：`packages/docs`（Mintlify）
+
+`packages/docs/` 是独立的 Mintlify 站点，配置在 `docs.json`：
+
+- `$schema: https://mintlify.com/docs.json`，`theme: "mint"`
+- 主色 `#16A34A`（与 opencode 品牌一致）
+- navigation：单 tab "SDK"，group "Getting started"，pages `index` / `quickstart` / `development`
+- `openapi: https://opencode.ai/openapi.json` —— OpenAPI 规范
+- `contextual.options`：copy / view / chatgpt / claude / perplexity / mcp / cursor / vscode（每页可一键发到这些工具）
+
+### 内容
+
+```
+packages/docs/
+├── docs.json          # Mintlify 配置
+├── index.mdx  quickstart.mdx  development.mdx
+├── essentials/        # code / images / markdown / navigation / reusable-snippets / settings
+├── ai-tools/          # claude-code / cursor / windsurf 集成指南
+├── snippets/
+├── images/  logo/
+└── openapi.json -> ../sdk/openapi.json   # 软链到 SDK 的 openapi.json
+```
+
+`openapi.json` 是软链，指向 `packages/sdk/openapi.json`——即 HttpApi 契约生成的 OpenAPI 规范。改了 Protocol/Server HttpApi，这里自动跟上。
+
+## 与本仓库的关系
+
+| 仓库 | 文档站 | 用途 |
+|---|---|---|
+| `../opencode`（上游） | `packages/web`（Starlight）+ `packages/docs`（Mintlify） | 面向用户的官方文档 |
+| `opencode-docs`（本仓库） | `website/`（Docusaurus） | 学习笔记，用 Docusaurus 重新组织对 opencode 的理解 |
+
+本仓库的 Docusaurus 站点内容在 `docs/`（即你现在读的这套），不依赖上游两套站点，但引用上游代码路径。
+
+## 相关文档
+
+- 多端与 web 包：[multi-platform](./multi-platform)
+- HttpApi 与 openapi.json 生成链路：[架构分层](../architecture#1-httpapi-契约--实现--客户端生成)
+- 代码生成：[工程基建](../tooling#代码生成勿手改)

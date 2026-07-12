@@ -1,0 +1,86 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "palm",
+  "name": "opencode 学习文档",
+  "colors": {
+    "primary": "#16a34a",
+    "light": "#4ade80",
+    "dark": "#15803d"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "groups": [
+      {
+        "group": "开始",
+        "pages": [
+          "docs/introduction",
+          "docs/overview",
+          "docs/learning-path"
+        ]
+      },
+      {
+        "group": "架构与原理",
+        "pages": [
+          "docs/architecture",
+          "docs/glossary",
+          "docs/tooling",
+          "docs/runtime-subsystems",
+          "docs/session-v2-deep-dive",
+          "docs/clients-and-ui"
+        ]
+      },
+      {
+        "group": "功能",
+        "pages": [
+          "docs/features/cli-commands",
+          "docs/features/providers",
+          "docs/features/tools",
+          "docs/features/agents-and-skills",
+          "docs/features/sessions",
+          "docs/features/config",
+          "docs/features/multi-platform",
+          "docs/features/docs-site"
+        ]
+      },
+      {
+        "group": "实现原理",
+        "pages": [
+          "docs/internals/dependency-layering",
+          "docs/internals/session-lifecycle",
+          "docs/internals/llm-stream-loop",
+          "docs/internals/tool-registry-permissions",
+          "docs/internals/system-context-algebra",
+          "docs/internals/httpapi-codegen",
+          "docs/internals/storage-db",
+          "docs/internals/embedded-opencode"
+        ]
+      }
+    ]
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "topbarLinks": [
+    {
+      "name": "opencode 仓库",
+      "url": "https://github.com/sst/opencode"
+    },
+    {
+      "name": "opencode.ai",
+      "url": "https://opencode.ai"
+    }
+  ],
+  "topbarCta": {
+    "name": "GitHub",
+    "url": "https://github.com/sst/opencode"
+  },
+  "search": {
+    "prompt": "搜索文档…"
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/sst/opencode"
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "opencode-docs-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mintlify 驱动的 opencode 学习文档站",
+  "scripts": {
+    "dev": "mintlify dev",
+    "build": "mintlify build",
+    "preview": "mintlify preview",
+    "lint": "mintlify broken-links"
+  },
+  "devDependencies": {
+    "mintlify": "^4.2.687"
+  },
+  "packageManager": "pnpm@11.1.3"
+}
